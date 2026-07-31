@@ -7,10 +7,11 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "mrz1m3rm4n" }]
 dependencies = [
-    "lxml>=5.3",       # XML parsing + XSD/DTD validation
-    "pydantic>=2.9",   # domain models -> validated data before serialization
-    "zeep>=4.3",       # SOAP client for the Magaya API (XML Web Service over HTTP)
-    "typer>=0.15",     # command-line interface
+    "lxml>=5.3",              # XML parsing + XSD/DTD validation
+    "pydantic>=2.9",          # domain models -> validated data before serialization
+    "httpx>=0.27",            # HTTP client for the hand-built SOAP calls
+    "pydantic-settings>=2.5", # load Magaya settings from env / .env
+    "typer>=0.15",            # command-line interface
 ]
 
 [project.scripts]
