@@ -77,11 +77,14 @@ class EntityContact(BaseModel):
 class EntityType(IntEnum):
     """Entity type codes accepted by `GetEntitiesOfType` (bitmask values).
 
-    `CUSTOMER` returns `<Client>` elements. `ANY` (0) means no type filter.
+    Names are the descriptive labels Magaya uses in its data/app. `CLIENT` is
+    Magaya's API type code "Customer" (0x002) and returns `<Client>` elements;
+    `CUSTOMER` is kept as an alias. `ANY` (0) means no type filter.
     """
 
     ANY = 0x000
-    CUSTOMER = 0x002
+    CLIENT = 0x002
+    CUSTOMER = 0x002  # alias of CLIENT — Magaya's API name for the client type
     WAREHOUSE_PROVIDER = 0x004
     FORWARDING_AGENT = 0x008
     CARRIER = 0x020

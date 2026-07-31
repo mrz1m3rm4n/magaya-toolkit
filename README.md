@@ -27,7 +27,7 @@ with Magaya(MagayaSettings()) as magaya:
         print(s.number, s.mode, s.status)
 
     # Read entities (Client, Carrier, Vendor, …) and their contacts:
-    entities = magaya.entities.find("MUE", entity_type=EntityType.CUSTOMER)
+    entities = magaya.entities.find("MUE", entity_type=EntityType.CLIENT)
     for e in entities:
         print(e.name, e.kind, e.entity_id)
     contacts = magaya.entities.contacts(entities[0].guid)
@@ -38,6 +38,13 @@ with Magaya(MagayaSettings()) as magaya:
 it reads `GetEntitiesOfType`, otherwise `GetEntities`.
 `magaya.entities.contacts(entity_guid)` returns typed `EntityContact` models for
 one entity.
+
+> **Client vs. Customer:** Magaya's API names the client entity type `Customer`
+> (code `0x002`) but returns `<Client>` elements. This SDK uses the descriptive
+> label users recognize — `EntityType.CLIENT` and `--type client` — and keeps
+> `EntityType.CUSTOMER` / `--type customer` as aliases. Returned clients have
+> `kind == "Client"`. The other type names (`carrier`, `vendor`, …) already match
+> Magaya's data, so no aliasing is needed there.
 
 `MagayaSettings()` reads your connection details from the environment / `.env`
 (see [Configure](#configure)). Every resource call inside the same `with` block
@@ -66,11 +73,12 @@ do from Python via the facade.
 - **List entities** — Clients, Carriers, Vendors, …, as a table or JSON:
   ```bash
   magaya entities
-  magaya entities MUE --type customer --json
+  magaya entities MUE --type client --json
   ```
   Optional positional `START_WITH` filters by name prefix. `--type` accepts
-  `customer`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`,
-  `employee`, `salesman`, or `division`; omit it for all entities.
+  `client`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`,
+  `employee`, `salesman`, or `division`; omit it for all entities. (`customer`
+  is accepted as an alias of `client` — see the library note above.)
 
 - **Validate a Magaya XML file** — well-formedness, plus optional XSD:
   ```bash
@@ -260,7 +268,7 @@ uv run magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --backwards 
 uv run magaya entities
 
 # Customers whose name starts with "MUE", as JSON
-uv run magaya entities MUE --type customer --json
+uv run magaya entities MUE --type client --json
 
 # Validate a Magaya XML file against an XSD
 uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
@@ -282,7 +290,7 @@ uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `START_WITH` (positional) | *(none)* | Filter entities by name prefix. |
-| `--type` | *(all)* | `customer`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`, `employee`, `salesman`, `division`. |
+| `--type` | *(all)* | `client`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`, `employee`, `salesman`, `division` (`customer` = alias of `client`). |
 | `--json` | off | Emit a JSON array instead of the table. |
 
 ## Architecture (hexagonal)

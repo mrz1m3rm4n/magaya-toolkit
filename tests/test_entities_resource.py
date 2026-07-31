@@ -129,7 +129,7 @@ def test_find_with_type_uses_get_entities_of_type_and_sends_entity_type():
         return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
 
     with _facade(handler) as magaya:
-        results = magaya.entities.find("MUE", entity_type=EntityType.CUSTOMER)
+        results = magaya.entities.find("MUE", entity_type=EntityType.CLIENT)
 
     assert [e.name for e in results] == ["Acme"]
     assert [e.kind for e in results] == ["Client"]

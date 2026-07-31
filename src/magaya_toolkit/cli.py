@@ -8,7 +8,7 @@ and listing shipments for a date range.
     magaya shipments --from 2025-01-01 --to 2025-01-31
     magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --json
     magaya entities
-    magaya entities MUE --type customer --json
+    magaya entities MUE --type client --json
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ from magaya_toolkit.infrastructure.xml.lxml_validator import LxmlValidator
 # Map the CLI `--type` choices to the domain `EntityType` codes. `None` (the
 # option's default) means "all entities" (no type filter).
 _ENTITY_TYPES = {
-    "customer": EntityType.CUSTOMER,
+    "client": EntityType.CLIENT,
+    "customer": EntityType.CLIENT,  # alias — Magaya's API name for the client type
     "carrier": EntityType.CARRIER,
     "vendor": EntityType.VENDOR,
     "forwarding-agent": EntityType.FORWARDING_AGENT,
@@ -120,7 +121,7 @@ def entities(
         None,
         "--type",
         help=(
-            "Filter by entity type: customer, carrier, vendor, forwarding-agent, "
+            "Filter by entity type: client, carrier, vendor, forwarding-agent, "
             "warehouse-provider, employee, salesman, division. Omit for all."
         ),
     ),
