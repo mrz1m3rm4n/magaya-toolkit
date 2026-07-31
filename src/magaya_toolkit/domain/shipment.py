@@ -12,20 +12,14 @@ optional so that fields absent in a given shipment's XML never cause an error.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel
 
+# `Measure` now lives in the shared domain module; re-exported here so existing
+# imports (`from magaya_toolkit.domain.shipment import Measure`) keep working.
+from magaya_toolkit.domain.common import Measure
 
-class Measure(BaseModel):
-    """A numeric quantity with an optional unit or currency.
-
-    Used for weight/volume (text value + `Unit` attribute) and monetary value
-    (text value + `Currency` attribute).
-    """
-
-    value: Decimal
-    unit: str | None = None
+__all__ = ["Measure", "Shipment"]
 
 
 class Shipment(BaseModel):

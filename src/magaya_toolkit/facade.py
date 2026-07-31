@@ -15,7 +15,7 @@ from typing import Self
 from magaya_toolkit.domain.errors import SessionError
 from magaya_toolkit.infrastructure.config import MagayaSettings
 from magaya_toolkit.infrastructure.soap.magaya_client import MagayaSoapClient
-from magaya_toolkit.resources import ShipmentsResource
+from magaya_toolkit.resources import EntitiesResource, ShipmentsResource
 
 
 class Magaya:
@@ -46,6 +46,7 @@ class Magaya:
 
         # Resource namespaces bound to this facade. Add more the same way.
         self.shipments = ShipmentsResource(self)
+        self.entities = EntitiesResource(self)
 
     # -- session lifecycle -------------------------------------------------
 

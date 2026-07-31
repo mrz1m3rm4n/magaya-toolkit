@@ -7,6 +7,8 @@ and listing shipments for a date range.
     magaya validate path/to/transaction.xml --xsd schemas/magaya.xsd
     magaya shipments --from 2025-01-01 --to 2025-01-31
     magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --json
+    magaya entities
+    magaya entities MUE --type customer --json
 """
 
 from __future__ import annotations
@@ -16,10 +18,24 @@ from pathlib import Path
 
 import typer
 
+from magaya_toolkit.domain.entity import EntityType
 from magaya_toolkit.domain.errors import ApiError, XmlValidationError
 from magaya_toolkit.facade import Magaya
 from magaya_toolkit.infrastructure.config import MagayaSettings
 from magaya_toolkit.infrastructure.xml.lxml_validator import LxmlValidator
+
+# Map the CLI `--type` choices to the domain `EntityType` codes. `None` (the
+# option's default) means "all entities" (no type filter).
+_ENTITY_TYPES = {
+    "customer": EntityType.CUSTOMER,
+    "carrier": EntityType.CARRIER,
+    "vendor": EntityType.VENDOR,
+    "forwarding-agent": EntityType.FORWARDING_AGENT,
+    "warehouse-provider": EntityType.WAREHOUSE_PROVIDER,
+    "employee": EntityType.EMPLOYEE,
+    "salesman": EntityType.SALESMAN,
+    "division": EntityType.DIVISION,
+}
 
 app = typer.Typer(help="Build and validate Magaya API transactions.")
 
@@ -95,6 +111,54 @@ def shipments(
             f"ETA={_eta(shipment)}"
         )
     typer.echo(f"{len(results)} shipment(s).")
+
+
+@app.command()
+def entities(
+    start_with: str = typer.Argument("", help="Filter entities by name prefix."),
+    entity_type: str | None = typer.Option(
+        None,
+        "--type",
+        help=(
+            "Filter by entity type: customer, carrier, vendor, forwarding-agent, "
+            "warehouse-provider, employee, salesman, division. Omit for all."
+        ),
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit a JSON array instead of a table."),
+) -> None:
+    """List entities from Magaya (read-only)."""
+    if entity_type is not None and entity_type not in _ENTITY_TYPES:
+        choices = ", ".join(sorted(_ENTITY_TYPES))
+        typer.secho(
+            f"ERROR: unknown --type '{entity_type}'. Choose one of: {choices}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    selected_type = _ENTITY_TYPES[entity_type] if entity_type is not None else None
+
+    settings = MagayaSettings()
+    try:
+        with Magaya(settings) as magaya:
+            results = magaya.entities.find(start_with, entity_type=selected_type)
+    except ApiError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    if as_json:
+        payload = [entity.model_dump(mode="json") for entity in results]
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    for entity in results:
+        typer.echo(
+            f"{entity.name or '-'}\t"
+            f"{entity.kind}\t"
+            f"{entity.entity_id or '-'}\t"
+            f"{entity.email or '-'}\t"
+            f"{entity.phone or '-'}"
+        )
+    typer.echo(f"{len(results)} entity(ies).")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from magaya_toolkit.domain.entity import Entity, EntityContact
 from magaya_toolkit.domain.shipment import Shipment
 
 
@@ -28,6 +29,27 @@ class ShipmentParser(Protocol):
 
         Raises `XmlValidationError` if the input is not a well-formed
         `<Shipments>` document. An empty or absent `<Shipments>` returns [].
+        """
+        ...
+
+
+class EntityParser(Protocol):
+    """Turns Magaya entity XML documents into domain entities and contacts."""
+
+    def parse_entities(self, entity_list_xml: str | bytes) -> list[Entity]:
+        """Parse an `<Entities>` document into `Entity` objects.
+
+        Raises `XmlValidationError` if the input is not a well-formed
+        `<Entities>` document. An empty or absent `<Entities>` returns [].
+        """
+        ...
+
+    def parse_contacts(self, contact_list_xml: str | bytes) -> list[EntityContact]:
+        """Parse an `<EntityContacts>` document into `EntityContact` objects.
+
+        Raises `XmlValidationError` if the input is not a well-formed
+        `<EntityContacts>` document. An empty or absent `<EntityContacts>`
+        returns [].
         """
         ...
 

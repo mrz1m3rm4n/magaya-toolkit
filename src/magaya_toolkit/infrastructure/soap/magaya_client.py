@@ -203,6 +203,63 @@ class MagayaSoapClient:
         more_results = self._more_results(root)
         return trans_list_xml, next_cookie, more_results
 
+    # -- entity reads (session-scoped, single-call) ------------------------
+
+    def get_entities(self, access_key: int, start_with: str = "", flags: int = 0) -> str:
+        """Return the raw `entity_list_xml` for all entities within an OPEN session.
+
+        Single-call read (no pagination cookie). `start_with` optionally filters
+        by name prefix. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetEntities xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<start_with xsi:type="xsd:string">{escape(start_with)}</start_with>'
+            "</q1:GetEntities>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped entity_list_xml when reading .text.
+        return self._text(root, "entity_list_xml") or ""
+
+    def get_entities_of_type(
+        self, access_key: int, start_with: str, entity_type: int, flags: int = 0
+    ) -> str:
+        """Return the raw `entity_list_xml` for entities of `entity_type`.
+
+        Single-call read (no pagination cookie). `entity_type` is a Magaya
+        bitmask code. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetEntitiesOfType xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<start_with xsi:type="xsd:string">{escape(start_with)}</start_with>'
+            f'<entity_type xsi:type="xsd:int">{int(entity_type)}</entity_type>'
+            "</q1:GetEntitiesOfType>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "entity_list_xml") or ""
+
+    def get_entity_contacts(self, access_key: int, entity_uuid: str, flags: int = 0) -> str:
+        """Return the raw `contact_list_xml` for one entity within an OPEN session.
+
+        Single-call read (no pagination cookie). Assumes the caller already
+        holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetEntityContacts xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<entity_uuid xsi:type="xsd:string">{escape(entity_uuid)}</entity_uuid>'
+            "</q1:GetEntityContacts>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "contact_list_xml") or ""
+
     @classmethod
     def _more_results(cls, root: etree._Element) -> bool:
         """Parse the `<more_results>` 1/0 flag into a bool."""

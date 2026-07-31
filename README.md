@@ -19,21 +19,33 @@ session for you (one `StartSession` / `EndSession` per `with` block) and exposes
 typed resources — you never touch access keys or pagination cookies:
 
 ```python
-from magaya_toolkit import Magaya, MagayaSettings
+from magaya_toolkit import EntityType, Magaya, MagayaSettings
 
 with Magaya(MagayaSettings()) as magaya:
     shipments = magaya.shipments.list("2025-01-01", "2025-01-31")
     for s in shipments:
         print(s.number, s.mode, s.status)
+
+    # Read entities (Client, Carrier, Vendor, …) and their contacts:
+    entities = magaya.entities.find("MUE", entity_type=EntityType.CUSTOMER)
+    for e in entities:
+        print(e.name, e.kind, e.entity_id)
+    contacts = magaya.entities.contacts(entities[0].guid)
 ```
+
+`magaya.entities.find(start_with="", *, entity_type=None, flags=0)` returns typed
+`Entity` models. Pass an `EntityType` (or omit it for all entities); with a type
+it reads `GetEntitiesOfType`, otherwise `GetEntities`.
+`magaya.entities.contacts(entity_guid)` returns typed `EntityContact` models for
+one entity.
 
 `MagayaSettings()` reads your connection details from the environment / `.env`
 (see [Configure](#configure)). Every resource call inside the same `with` block
-reuses the one open session. Read resources return typed `Shipment` models.
+reuses the one open session. Read resources return typed models.
 
 The public API is exported from the package root: `Magaya`, `MagayaSettings`,
-`Shipment`, `Measure`, and the errors `MagayaError`, `ApiError`,
-`XmlValidationError`, `SessionError`.
+`Shipment`, `Entity`, `EntityContact`, `EntityType`, `Measure`, `Address`, and
+the errors `MagayaError`, `ApiError`, `XmlValidationError`, `SessionError`.
 
 ---
 
@@ -51,6 +63,15 @@ do from Python via the facade.
   Handles the Magaya pagination cursor correctly and merges Ocean and Air
   shipments into a single typed `Shipment` model.
 
+- **List entities** — Clients, Carriers, Vendors, …, as a table or JSON:
+  ```bash
+  magaya entities
+  magaya entities MUE --type customer --json
+  ```
+  Optional positional `START_WITH` filters by name prefix. `--type` accepts
+  `customer`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`,
+  `employee`, `salesman`, or `division`; omit it for all entities.
+
 - **Validate a Magaya XML file** — well-formedness, plus optional XSD:
   ```bash
   magaya validate path/to/transaction.xml
@@ -64,9 +85,11 @@ do from Python via the facade.
 | Session handling (`StartSession` / `EndSession`) | ✅ working |
 | Read shipments by date range (`GetFirst`/`GetNextTransbyDate`) | ✅ working, validated live |
 | Typed `Shipment` read model + XML parser | ✅ working |
-| CLI (`magaya shipments`, `magaya validate`) | ✅ working |
+| Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
+| Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
+| CLI (`magaya shipments`, `magaya entities`, `magaya validate`) | ✅ working |
 | XML validation (well-formedness + optional XSD) | ✅ working |
-| Read other transaction types (invoices, entities, rates…) | ⏳ not yet — same pattern |
+| Read other transaction types (invoices, rates…) | ⏳ not yet — same pattern |
 | Populate `schemas/` with the official Magaya XSDs | ⏳ pending |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
 
@@ -120,6 +143,12 @@ uv run magaya shipments --from 2025-01-01 --to 2025-01-31
 # As JSON, capped to the 100 most recent
 uv run magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --backwards --json
 
+# List entities as a table (Name, Kind, EntityID, Email, Phone)
+uv run magaya entities
+
+# Customers whose name starts with "MUE", as JSON
+uv run magaya entities MUE --type customer --json
+
 # Validate a Magaya XML file against an XSD
 uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
 ```
@@ -135,23 +164,33 @@ uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
 | `--json` | off | Emit a JSON array instead of the table. |
 | `--backwards` / `--no-backwards` | off | Return the most recent transactions first. |
 
+`magaya entities` options:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `START_WITH` (positional) | *(none)* | Filter entities by name prefix. |
+| `--type` | *(all)* | `customer`, `carrier`, `vendor`, `forwarding-agent`, `warehouse-provider`, `employee`, `salesman`, `division`. |
+| `--json` | off | Emit a JSON array instead of the table. |
+
 ## Architecture (hexagonal)
 
 ```
 src/magaya_toolkit/
-├── __init__.py        # public SDK surface (Magaya, MagayaSettings, Shipment, errors…)
+├── __init__.py        # public SDK surface (Magaya, MagayaSettings, Shipment, Entity, errors…)
 ├── facade.py          # Magaya — SDK front door; owns one managed session
-├── resources.py       # ShipmentsResource — typed reads over the facade session
+├── resources.py       # ShipmentsResource, EntitiesResource — typed reads over the session
 ├── domain/            # pure models + errors (no SOAP, no XML libs)
-│   ├── shipment.py    #   Shipment read model + Measure
+│   ├── common.py      #   shared read models (Measure, Address)
+│   ├── shipment.py    #   Shipment read model
+│   ├── entity.py      #   Entity, EntityContact, EntityType read models
 │   └── errors.py      #   MagayaError, ApiError, XmlValidationError, SessionError
 ├── application/       # ports (Protocols) + use cases — the boundaries
-│   ├── ports.py       #   MagayaReader, ShipmentParser, XmlValidator
+│   ├── ports.py       #   MagayaReader, ShipmentParser, EntityParser, XmlValidator
 │   └── use_cases.py   #   list_shipments(...), collect_shipments(...)
 └── infrastructure/    # adapters that implement the ports
     ├── config.py      #   MagayaSettings (.env)
     ├── soap/          #   MagayaSoapClient (httpx, hand-built SOAP 1.1)
-    └── xml/           #   LxmlShipmentParser, LxmlValidator
+    └── xml/           #   LxmlShipmentParser, LxmlEntityParser, LxmlValidator
 ```
 
 Dependencies point inward: `infrastructure` depends on `application`/`domain`,
@@ -184,6 +223,10 @@ Useful facts about the Magaya API, verified against a live cloud instance:
   data). `GetNextTransbyDate(cookie)` returns the transaction XML **and an
   updated cookie** — you must thread that updated cookie into the next call, or
   you re-fetch the same page forever. Iterate until `more_results == 0`.
+- **Reading entities.** `GetEntities`, `GetEntitiesOfType`, and
+  `GetEntityContacts` are **single-call** reads (no pagination cookie): each
+  returns one XML blob (`entity_list_xml` / `contact_list_xml`). The child tag of
+  `<Entities>` (`Client`, `Carrier`, `Vendor`, …) is the entity kind.
 - **XML namespace.** Returned transactions are namespaced under
   `http://www.magaya.com/XMLSchema/V1`.
 - **Official XSDs** (v11.5.1+, public): `https://schema.magaya.net/Core/V1/*.xsd`
