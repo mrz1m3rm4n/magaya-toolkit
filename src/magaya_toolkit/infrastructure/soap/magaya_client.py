@@ -209,6 +209,43 @@ class MagayaSoapClient:
         raw = cls._text(root, "more_results")
         return raw is not None and raw.strip() == "1"
 
+    # -- session-scoped iterator ------------------------------------------
+
+    def iter_transactions_by_date(
+        self,
+        access_key: int,
+        trans_type: str,
+        start_date: str,
+        end_date: str,
+        record_quantity: int = 5,
+        backwards_order: bool = False,
+        flags: int = 0,
+    ) -> Iterator[str]:
+        """Yield each `trans_list_xml` batch for a date range within an OPEN session.
+
+        Assumes the caller already holds a valid `access_key` (from
+        `start_session`) and is responsible for closing the session. This method
+        neither opens nor closes a session: it only runs the query and threads
+        the pagination cookie. Use `read_transactions_by_date` for the
+        session-managed convenience variant.
+        """
+        # GetFirst returns the cookie to feed the first GetNext. It carries
+        # no transaction XML itself.
+        cookie, more_results = self.get_first_trans_by_date(
+            access_key=access_key,
+            trans_type=trans_type,
+            start_date=start_date,
+            end_date=end_date,
+            record_quantity=record_quantity,
+            backwards_order=backwards_order,
+            flags=flags,
+        )
+        while more_results:
+            # Thread the updated cookie back in; reusing the GetFirst cookie
+            # would loop over the same page forever.
+            trans_list_xml, cookie, more_results = self.get_next_trans_by_date(cookie)
+            yield trans_list_xml
+
     # -- convenience iterator ---------------------------------------------
 
     def read_transactions_by_date(
@@ -228,9 +265,7 @@ class MagayaSoapClient:
         """
         access_key = self.start_session()
         try:
-            # GetFirst returns the cookie to feed the first GetNext. It carries
-            # no transaction XML itself.
-            cookie, more_results = self.get_first_trans_by_date(
+            yield from self.iter_transactions_by_date(
                 access_key=access_key,
                 trans_type=trans_type,
                 start_date=start_date,
@@ -239,10 +274,5 @@ class MagayaSoapClient:
                 backwards_order=backwards_order,
                 flags=flags,
             )
-            while more_results:
-                # Thread the updated cookie back in; reusing the GetFirst cookie
-                # would loop over the same page forever.
-                trans_list_xml, cookie, more_results = self.get_next_trans_by_date(cookie)
-                yield trans_list_xml
         finally:
             self.end_session(access_key)

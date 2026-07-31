@@ -16,12 +16,10 @@ from pathlib import Path
 
 import typer
 
-from magaya_toolkit.application.use_cases import list_shipments
 from magaya_toolkit.domain.errors import ApiError, XmlValidationError
+from magaya_toolkit.facade import Magaya
 from magaya_toolkit.infrastructure.config import MagayaSettings
-from magaya_toolkit.infrastructure.soap.magaya_client import MagayaSoapClient
 from magaya_toolkit.infrastructure.xml.lxml_validator import LxmlValidator
-from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
 
 app = typer.Typer(help="Build and validate Magaya API transactions.")
 
@@ -67,24 +65,19 @@ def shipments(
 ) -> None:
     """List shipments from Magaya for a date range (read-only)."""
     settings = MagayaSettings()
-    client = MagayaSoapClient(settings)
-    parser = LxmlShipmentParser()
     try:
-        results = list_shipments(
-            reader=client,
-            parser=parser,
-            start_date=from_date,
-            end_date=to_date,
-            trans_type=trans_type,
-            record_quantity=record_quantity,
-            backwards_order=backwards,
-            max_results=max_results,
-        )
+        with Magaya(settings) as magaya:
+            results = magaya.shipments.list(
+                from_date,
+                to_date,
+                trans_type=trans_type,
+                record_quantity=record_quantity,
+                backwards=backwards,
+                max_results=max_results,
+            )
     except ApiError as exc:
         typer.secho(f"ERROR: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
-    finally:
-        client.close()
 
     if as_json:
         payload = [shipment.model_dump(mode="json") for shipment in results]

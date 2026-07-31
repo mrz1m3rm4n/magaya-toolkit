@@ -29,3 +29,7 @@ class XmlValidationError(MagayaError):
 
 class ApiError(MagayaError):
     """Raised when the Magaya API returns an error code or a SOAP fault."""
+
+
+class SessionError(MagayaError):
+    """Raised when a resource is used before the Magaya session is open."""

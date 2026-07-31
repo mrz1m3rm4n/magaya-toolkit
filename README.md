@@ -4,7 +4,7 @@ A small, typed Python toolkit to **read data from the Magaya API** and **validat
 Magaya XML** — without hand-writing SOAP envelopes or XML.
 
 The Magaya API is an XML Web Service (SOAP over HTTPS). This toolkit wraps it
-behind clean, typed use cases so callers work with Python objects, not raw XML.
+behind a clean, typed SDK so callers work with Python objects, not raw XML.
 
 > **Scope today: read-only.** The toolkit reads transactions from Magaya and
 > parses them into typed models. It does **not** create or modify anything in
@@ -12,7 +12,36 @@ behind clean, typed use cases so callers work with Python objects, not raw XML.
 
 ---
 
-## What you can do today
+## Use as a library
+
+The primary interface is the `Magaya` facade. It manages a single Magaya
+session for you (one `StartSession` / `EndSession` per `with` block) and exposes
+typed resources — you never touch access keys or pagination cookies:
+
+```python
+from magaya_toolkit import Magaya, MagayaSettings
+
+with Magaya(MagayaSettings()) as magaya:
+    shipments = magaya.shipments.list("2025-01-01", "2025-01-31")
+    for s in shipments:
+        print(s.number, s.mode, s.status)
+```
+
+`MagayaSettings()` reads your connection details from the environment / `.env`
+(see [Configure](#configure)). Every resource call inside the same `with` block
+reuses the one open session. Read resources return typed `Shipment` models.
+
+The public API is exported from the package root: `Magaya`, `MagayaSettings`,
+`Shipment`, `Measure`, and the errors `MagayaError`, `ApiError`,
+`XmlValidationError`, `SessionError`.
+
+---
+
+## CLI
+
+The `magaya` CLI is a thin client over the same core the library uses (the
+`shipments` command drives the `Magaya` facade). Anything the CLI does, you can
+do from Python via the facade.
 
 - **List shipments by date range** — paginated, typed, as a table or JSON:
   ```bash
@@ -110,12 +139,15 @@ uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
 
 ```
 src/magaya_toolkit/
+├── __init__.py        # public SDK surface (Magaya, MagayaSettings, Shipment, errors…)
+├── facade.py          # Magaya — SDK front door; owns one managed session
+├── resources.py       # ShipmentsResource — typed reads over the facade session
 ├── domain/            # pure models + errors (no SOAP, no XML libs)
 │   ├── shipment.py    #   Shipment read model + Measure
-│   └── errors.py
+│   └── errors.py      #   MagayaError, ApiError, XmlValidationError, SessionError
 ├── application/       # ports (Protocols) + use cases — the boundaries
 │   ├── ports.py       #   MagayaReader, ShipmentParser, XmlValidator
-│   └── use_cases.py   #   list_shipments(...)
+│   └── use_cases.py   #   list_shipments(...), collect_shipments(...)
 └── infrastructure/    # adapters that implement the ports
     ├── config.py      #   MagayaSettings (.env)
     ├── soap/          #   MagayaSoapClient (httpx, hand-built SOAP 1.1)

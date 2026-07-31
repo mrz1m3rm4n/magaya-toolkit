@@ -1,12 +1,14 @@
 """CLI tests for `magaya shipments`. No network access.
 
-The settings, SOAP client, and use case are monkeypatched so the command runs
-end to end without touching .env or the network.
+The settings and the `Magaya` facade are monkeypatched so the command runs end
+to end without touching .env or the network. A fake facade stands in for the
+real SDK front door and records that its session is opened and closed.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import ClassVar
 
 import pytest
 from typer.testing import CliRunner
@@ -18,13 +20,35 @@ from magaya_toolkit.domain.shipment import Measure, Shipment
 runner = CliRunner()
 
 
-class _FakeClient:
-    """Stand-in for MagayaSoapClient that records close() and needs no network."""
+class _FakeShipments:
+    """Stand-in for `ShipmentsResource`; returns canned shipments."""
+
+    def __init__(self, results, error: Exception | None) -> None:
+        self._results = results
+        self._error = error
+
+    def list(self, *args, **kwargs):
+        if self._error is not None:
+            raise self._error
+        return self._results
+
+
+class _FakeMagaya:
+    """Stand-in for the `Magaya` facade; records open/close, needs no network."""
+
+    results: ClassVar[list] = []
+    error: ClassVar[Exception | None] = None
 
     def __init__(self, *args, **kwargs) -> None:
+        self.opened = False
         self.closed = False
+        self.shipments = _FakeShipments(type(self).results, type(self).error)
 
-    def close(self) -> None:
+    def __enter__(self):
+        self.opened = True
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
         self.closed = True
 
 
@@ -32,7 +56,9 @@ class _FakeClient:
 def _no_network(monkeypatch):
     # MagayaSettings() would read .env / env vars; replace it entirely.
     monkeypatch.setattr(cli, "MagayaSettings", lambda: object())
-    monkeypatch.setattr(cli, "MagayaSoapClient", _FakeClient)
+    monkeypatch.setattr(cli, "Magaya", _FakeMagaya)
+    _FakeMagaya.results = []
+    _FakeMagaya.error = None
 
 
 def _sample() -> Shipment:
@@ -49,8 +75,8 @@ def _sample() -> Shipment:
     )
 
 
-def test_shipments_table_output(monkeypatch):
-    monkeypatch.setattr(cli, "list_shipments", lambda **kwargs: [_sample()])
+def test_shipments_table_output():
+    _FakeMagaya.results = [_sample()]
 
     result = runner.invoke(
         cli.app, ["shipments", "--from", "2025-01-01", "--to", "2025-01-31"]
@@ -63,8 +89,8 @@ def test_shipments_table_output(monkeypatch):
     assert "1 shipment(s)." in result.stdout
 
 
-def test_shipments_json_output(monkeypatch):
-    monkeypatch.setattr(cli, "list_shipments", lambda **kwargs: [_sample()])
+def test_shipments_json_output():
+    _FakeMagaya.results = [_sample()]
 
     result = runner.invoke(
         cli.app, ["shipments", "--from", "2025-01-01", "--to", "2025-01-31", "--json"]
@@ -75,11 +101,8 @@ def test_shipments_json_output(monkeypatch):
     assert '"mode": "Ocean"' in result.stdout
 
 
-def test_shipments_api_error_exits_1(monkeypatch):
-    def _raise(**kwargs):
-        raise ApiError("access_denied")
-
-    monkeypatch.setattr(cli, "list_shipments", _raise)
+def test_shipments_api_error_exits_1():
+    _FakeMagaya.error = ApiError("access_denied")
 
     result = runner.invoke(
         cli.app, ["shipments", "--from", "2025-01-01", "--to", "2025-01-31"]
