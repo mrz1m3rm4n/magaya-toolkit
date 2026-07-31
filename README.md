@@ -95,6 +95,119 @@ do from Python via the facade.
 
 ---
 
+## API coverage
+
+Progress toward consuming the full Magaya API. Read methods are the current
+focus; write methods are out of scope for now. Keep this section current with
+the `update-api-coverage` skill whenever a method is finished.
+
+Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 generic
+
+<!-- API-COVERAGE:START -->
+| Metric | Count |
+| --- | --- |
+| Total API methods | 59 |
+| ✅ Done | 7 |
+| 🟡 Read, pending | 29 |
+| 🚫 Write (out of scope) | 22 |
+| 🔧 Generic (`Invoke`) | 1 |
+
+**Read coverage: 5 / 34 read methods (~15%).**
+
+### Session
+| Method | Status |
+| --- | --- |
+| StartSession | ✅ |
+| EndSession | ✅ |
+
+### Generic transactions
+| Method | Status |
+| --- | --- |
+| GetFirstTransbyDate | ✅ |
+| GetNextTransbyDate | ✅ |
+| GetTransaction | 🟡 |
+| GetTransRangeByDate | 🟡 |
+| GetTransRangeByDateJS | 🟡 |
+| GetFirstTransbyDateJS | 🟡 |
+| ExistsTransaction | 🟡 |
+| GetTransactionStatus | 🟡 |
+| GetTransactionsByBillingClient | 🟡 |
+| GetRelatedTransactions | 🟡 |
+| GetAccountingTransactions | 🟡 |
+| GetEntityTransactions | 🟡 |
+| SetTransaction | 🚫 |
+| DeleteTransaction | 🚫 |
+| RenameTransaction | 🚫 |
+| SetTransactionEvents | 🚫 |
+| SetTransactionCharges | 🚫 |
+
+### Entities
+| Method | Status |
+| --- | --- |
+| GetEntities | ✅ |
+| GetEntitiesOfType | ✅ |
+| GetEntityContacts | ✅ |
+| SetEntity | 🚫 |
+| SetParentEntity | 🚫 |
+
+### Rates
+| Method | Status |
+| --- | --- |
+| GetStandardRates | 🟡 |
+| GetClientRates | 🟡 |
+| GetCarrierRates | 🟡 |
+| SetRate | 🚫 |
+
+### Attachments
+| Method | Status |
+| --- | --- |
+| GetAllAttachments | 🟡 |
+| GetAttachment | 🟡 |
+| SetAttachment | 🚫 |
+
+### Transaction log
+| Method | Status |
+| --- | --- |
+| QueryLog | 🟡 |
+| QueryLogJS | 🟡 |
+
+### Online / purchase / sales orders
+| Method | Status |
+| --- | --- |
+| SubmitSalesOrder | 🚫 |
+| SubmitCargoRelease | 🚫 |
+| SubmitShipment | 🚫 |
+| SubmitPickupOrder | 🚫 |
+| UpdateOrder | 🚫 |
+| ValidateSalesOrder | 🚫 |
+| CancelSalesOrder | 🚫 |
+| ApproveOrder | 🚫 |
+
+### Miscellaneous
+| Method | Status |
+| --- | --- |
+| GetAccountDefinitions | 🟡 |
+| GetChargeDefinitions | 🟡 |
+| GetClientChargeDefinitions | 🟡 |
+| GetActiveCurrencies | 🟡 |
+| GetEventDefinitions | 🟡 |
+| GetWorkingPorts | 🟡 |
+| GetItemFromVIN | 🟡 |
+| GetItemDefinitionsByCustomer | 🟡 |
+| GetInventoryItemsByItemDefinition | 🟡 |
+| GetWebDocument | 🟡 |
+| GetSecureTrackingTransaction | 🟡 |
+| GetPODData | 🟡 |
+| SetShipmentStatus | 🚫 |
+| SetApprovalStatus | 🚫 |
+| SetCustomFieldValue | 🚫 |
+| SetTrackingUser | 🚫 |
+| UpdatePOD | 🚫 |
+| Invoke | 🔧 |
+<!-- API-COVERAGE:END -->
+
+---
+
 ## Requirements
 
 - **Python 3.12+**
