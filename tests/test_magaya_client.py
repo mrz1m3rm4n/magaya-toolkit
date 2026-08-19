@@ -71,6 +71,15 @@ def _get_next_response(trans_list_xml: str, more_results: int, next_cookie: str 
     )
 
 
+def _get_transaction_response(trans_xml: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:GetTransactionResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:trans_xml>{escape(trans_xml)}</snp:trans_xml>"
+        "</snp:GetTransactionResponse>"
+    )
+
+
 def _fault_response(faultstring: str) -> str:
     return _soap(
         "<soap:Fault>"
@@ -182,6 +191,47 @@ def test_read_transactions_by_date_iterates_and_ends_session():
     # GetNext (threaded), not the original GetFirst cookie. Reusing the same
     # cookie would loop over the same page forever.
     assert sent_cookies == ["cookie|abc", "cookie|p2"]
+
+
+def test_get_transaction_sends_documented_params_and_unescapes_response():
+    captured: dict[str, str] = {}
+    # Opaque payload: this test only proves the client passes the raw trans_xml
+    # through (unescaped). The real single-transaction XML shape is validated
+    # live before a parser is built against it.
+    inner = '<Shipment xmlns="http://www.magaya.com/XMLSchema/V1"><Number>BL-1</Number></Shipment>'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(
+            200,
+            text=_get_transaction_response(inner),
+            headers={"Content-Type": "text/xml"},
+        )
+
+    client = _client(handler)
+    result = client.get_transaction(access_key=42, trans_type="SH", number="BL-1")
+
+    body = captured["body"]
+    assert ":GetTransaction" in body
+    # Parameters and their wire types must match the Magaya API reference.
+    assert '<access_key xsi:type="xsd:int">42</access_key>' in body
+    assert '<type xsi:type="xsd:string">SH</type>' in body
+    assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert '<number xsi:type="xsd:string">BL-1</number>' in body
+    assert result == inner
+
+
+def test_get_transaction_not_found_raises_api_error():
+    # The live API returns `transaction_not_found` (one "c"); the wiki doc's
+    # `transaccion_not_found` is a typo. Validated against real Magaya.
+    client = _client(
+        _single_response(
+            _get_transaction_response("", return_code="transaction_not_found")
+        )
+    )
+    with pytest.raises(ApiError) as exc:
+        client.get_transaction(access_key=1, trans_type="SH", number="does-not-exist")
+    assert "transaction_not_found" in str(exc.value)
 
 
 def test_get_first_sends_backwards_order_as_int():

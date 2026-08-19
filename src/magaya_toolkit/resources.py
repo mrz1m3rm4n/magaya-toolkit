@@ -57,6 +57,19 @@ class ShipmentsResource:
         )
         return collect_shipments(chunks, self._parser, max_results)
 
+    def get(self, number: str, *, flags: int = 0) -> Shipment:
+        """Fetch a single shipment by its number or GUID via `GetTransaction`.
+
+        `number` is the shipment number, the Bill of Lading / Waybill number,
+        or the transaction GUID — `GetTransaction` accepts any of them. Reuses
+        the facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`. Raises `ApiError` if Magaya has no such transaction.
+        """
+        trans_xml = self._magaya.client.get_transaction(
+            self._magaya.access_key, "SH", number, flags=flags
+        )
+        return self._parser.parse_one(trans_xml)
+
 
 class EntitiesResource:
     """Read entities and their contacts through the facade's managed session."""

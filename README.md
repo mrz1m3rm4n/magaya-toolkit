@@ -87,6 +87,7 @@ do from Python via the facade.
 | Session handling (`StartSession` / `EndSession`) | ✅ working |
 | Read shipments by date range (`GetFirst`/`GetNextTransbyDate`) | ✅ working, validated live |
 | Typed `Shipment` read model + XML parser | ✅ working |
+| Read one shipment by number/GUID (`GetTransaction`) | ✅ working, validated live |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
@@ -107,12 +108,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 7 |
-| 🟡 Read, pending | 29 |
+| ✅ Done | 8 |
+| 🟡 Read, pending | 28 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 5 / 34 read methods (~15%).**
+**Read coverage: 6 / 34 read methods (~18%).**
 
 ### Session
 | Method | Status |
@@ -125,7 +126,7 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | --- | --- |
 | GetFirstTransbyDate | ✅ |
 | GetNextTransbyDate | ✅ |
-| GetTransaction | 🟡 |
+| GetTransaction | ✅ |
 | GetTransRangeByDate | 🟡 |
 | GetTransRangeByDateJS | 🟡 |
 | GetFirstTransbyDateJS | 🟡 |

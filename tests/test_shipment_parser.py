@@ -95,6 +95,48 @@ def test_parses_ocean_and_air_reading_only_top_level_fields():
     assert air.actual_arrival is None
 
 
+# A single-transaction GetTransaction(SH) response: the shipment element is the
+# ROOT itself (no <Shipments> wrapper), mirroring the real Magaya shape observed
+# live. A nested <Number> inside <Items> proves direct-children-only still holds.
+_ONE_SHIPMENT = f"""<?xml version="1.0" encoding="utf-8"?>
+<OceanShipment xmlns="{_NS}" GUID="bed2a7ea-guid" Type="SH">
+  <Number>TMSE2690826</Number>
+  <Status>In Transit</Status>
+  <ShipperName>Acme Corp</ShipperName>
+  <TotalWeight Unit="kg">1234.50</TotalWeight>
+  <HasAttachments>true</HasAttachments>
+  <Items>
+    <Item><Number>SHOULD-NOT-WIN</Number></Item>
+  </Items>
+</OceanShipment>"""
+
+
+def test_parse_one_reads_root_element_as_the_shipment():
+    shipment = LxmlShipmentParser().parse_one(_ONE_SHIPMENT)
+
+    # The root <OceanShipment> IS the shipment; mode derived from its local-name.
+    assert shipment.mode == "Ocean"
+    assert shipment.guid == "bed2a7ea-guid"
+    assert shipment.type_code == "SH"
+    # Direct-children-only still holds: nested <Number> must not win.
+    assert shipment.number == "TMSE2690826"
+    assert shipment.status == "In Transit"
+    assert shipment.has_attachments is True
+    assert shipment.total_weight is not None
+    assert shipment.total_weight.value == Decimal("1234.50")
+
+
+def test_parse_one_rejects_a_shipments_batch():
+    # Guard: parse_one is for single transactions, not the <Shipments> batch.
+    with pytest.raises(XmlValidationError):
+        LxmlShipmentParser().parse_one(_TWO_SHIPMENTS)
+
+
+def test_parse_one_malformed_xml_raises_validation_error():
+    with pytest.raises(XmlValidationError):
+        LxmlShipmentParser().parse_one("<OceanShipment><Broken></OceanShipment>")
+
+
 def test_empty_shipments_returns_empty_list():
     doc = f'<Shipments xmlns="{_NS}"/>'
     assert LxmlShipmentParser().parse(doc) == []

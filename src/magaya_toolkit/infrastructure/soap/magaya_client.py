@@ -5,8 +5,9 @@ the Magaya XML Web Service expects and parses responses with lxml, reading
 elements namespace-agnostically via `local-name()` XPath since responses are
 namespaced under `urn:CSSoapService`.
 
-Scope is strictly read-only: session management plus the date-range read
-methods (`GetFirst`/`GetNextTransbyDate`). No write/create operation lives here.
+Scope is strictly read-only: session management plus read methods — date-range
+transaction reads (`GetFirst`/`GetNextTransbyDate`), entity reads, and the
+single-transaction read (`GetTransaction`). No write/create operation lives here.
 
 Implements the `MagayaReader` port.
 """
@@ -259,6 +260,35 @@ class MagayaSoapClient:
         root = self._call(body)
         self._check_return(root)
         return self._text(root, "contact_list_xml") or ""
+
+    # -- transaction reads (session-scoped, single-call) -------------------
+
+    def get_transaction(
+        self, access_key: int, trans_type: str, number: str, flags: int = 0
+    ) -> str:
+        """Return the raw `trans_xml` for one transaction within an OPEN session.
+
+        Single-call read (no pagination cookie). `trans_type` is a Magaya
+        transaction type code (e.g. "SH" for a shipment, "IN" for an invoice);
+        `number` is the transaction number or GUID — for shipments it is the
+        Bill of Lading (Ocean/Ground) or Waybill number (Air). Assumes the
+        caller already holds a valid `access_key`.
+
+        The SOAP parameter order (`access_key`, `type`, `flags`, `number`)
+        mirrors the Magaya API reference for `GetTransaction`.
+        """
+        body = (
+            f'<q1:GetTransaction xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetTransaction>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
+        return self._text(root, "trans_xml") or ""
 
     @classmethod
     def _more_results(cls, root: etree._Element) -> bool:

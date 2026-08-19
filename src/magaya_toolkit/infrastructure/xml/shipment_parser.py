@@ -72,6 +72,31 @@ class LxmlShipmentParser:
             shipments.append(self._to_shipment(element))
         return shipments
 
+    def parse_one(self, trans_xml: str | bytes) -> Shipment:
+        """Parse a single-transaction `GetTransaction` response into a `Shipment`.
+
+        Unlike `parse`, whose root is a `<Shipments>` batch, `GetTransaction`
+        returns the shipment element itself as the root (e.g. `<OceanShipment>`
+        or `<AirShipment>`), so we hand the root straight to `_to_shipment`.
+        Raises `XmlValidationError` on malformed XML or on being handed a
+        `<Shipments>` batch by mistake.
+        """
+        raw = trans_xml.encode("utf-8") if isinstance(trans_xml, str) else trans_xml
+        try:
+            root = etree.fromstring(raw)
+        except etree.XMLSyntaxError as exc:
+            raise XmlValidationError(
+                "The transaction document is not well-formed XML.",
+                problems=[str(exc)],
+            ) from exc
+
+        if _local_name(root) == _ROOT_LOCAL_NAME:
+            raise XmlValidationError(
+                f"Expected a single shipment element, got a <{_ROOT_LOCAL_NAME}> batch. "
+                "Use `parse` for batch documents.",
+            )
+        return self._to_shipment(root)
+
     # -- element -> domain -------------------------------------------------
 
     def _to_shipment(self, element: etree._Element) -> Shipment:
