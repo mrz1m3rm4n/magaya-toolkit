@@ -90,6 +90,7 @@ do from Python via the facade.
 | Read one shipment by number/GUID (`GetTransaction`) | ✅ working, validated live |
 | Read invoices (`QueryLog` refs + `GetTransaction`) | ✅ working, validated live |
 | Related-transaction links (entity/shipment/invoice → refs) | ✅ working, validated live |
+| Existence & status probes (`ExistsTransaction`/`GetTransactionStatus`) | ✅ working, validated live |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
@@ -110,12 +111,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 12 |
-| 🟡 Read, pending | 24 |
+| ✅ Done | 14 |
+| 🟡 Read, pending | 22 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 10 / 34 read methods (~29%).**
+**Read coverage: 12 / 34 read methods (~35%).**
 
 ### Session
 | Method | Status |
@@ -132,8 +133,8 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | GetTransRangeByDate | 🟡 |
 | GetTransRangeByDateJS | 🟡 |
 | GetFirstTransbyDateJS | 🟡 |
-| ExistsTransaction | 🟡 |
-| GetTransactionStatus | 🟡 |
+| ExistsTransaction | ✅ |
+| GetTransactionStatus | ✅ |
 | GetTransactionsByBillingClient | 🟡 |
 | GetRelatedTransactions | ✅ |
 | GetAccountingTransactions | ✅ |

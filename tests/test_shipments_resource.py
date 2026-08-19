@@ -88,11 +88,33 @@ def _shipment_doc() -> str:
     )
 
 
+def _exists_response(exist_trans: str) -> str:
+    return _soap(
+        f"<snp:ExistsTransactionResponse {_NS}>"
+        f"<snp:return>no_error</snp:return>"
+        f"<snp:exist_trans>{exist_trans}</snp:exist_trans>"
+        "</snp:ExistsTransactionResponse>"
+    )
+
+
+def _status_response(status: str) -> str:
+    return _soap(
+        f"<snp:GetTransactionStatusResponse {_NS}>"
+        f"<snp:return>no_error</snp:return>"
+        f"<snp:trans_status>{escape(status)}</snp:trans_status>"
+        "</snp:GetTransactionStatusResponse>"
+    )
+
+
 def _method(body: str) -> str | None:
+    # `GetTransactionStatus` must be checked BEFORE `GetTransaction` — the latter
+    # is a substring of the former, so the general one would shadow it.
     for method in (
         "StartSession",
+        "GetTransactionStatus",
         "GetTransaction",
         "GetAccountingTransactions",
+        "ExistsTransaction",
         "EndSession",
     ):
         if f":{method}" in body:
@@ -183,3 +205,48 @@ def test_accounting_transactions_before_open_raises_session_error():
     magaya = _facade(handler)
     with pytest.raises(SessionError):
         magaya.shipments.accounting_transactions("TMSE2690826")
+
+
+def test_exists_returns_bool_and_sends_type_sh_and_number():
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("utf-8")
+        bodies.append(body)
+        method = _method(body)
+        if method == "StartSession":
+            text = _start_session_response(999)
+        elif method == "ExistsTransaction":
+            text = _exists_response("1")
+        else:
+            text = _end_session_response()
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler) as magaya:
+        assert magaya.shipments.exists("TMSE2690826") is True
+
+    body = next(b for b in bodies if _method(b) == "ExistsTransaction")
+    assert '<type xsi:type="xsd:string">SH</type>' in body
+    assert '<number xsi:type="xsd:string">TMSE2690826</number>' in body
+
+
+def test_status_returns_string_and_sends_type_sh():
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("utf-8")
+        bodies.append(body)
+        method = _method(body)
+        if method == "StartSession":
+            text = _start_session_response(999)
+        elif method == "GetTransactionStatus":
+            text = _status_response("Delivered")
+        else:
+            text = _end_session_response()
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler) as magaya:
+        assert magaya.shipments.status("TMSE2690826") == "Delivered"
+
+    body = next(b for b in bodies if _method(b) == "GetTransactionStatus")
+    assert '<type xsi:type="xsd:string">SH</type>' in body

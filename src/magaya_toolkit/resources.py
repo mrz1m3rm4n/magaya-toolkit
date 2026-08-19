@@ -90,6 +90,28 @@ class ShipmentsResource:
         )
         return self._log_parser.parse(trans_xml)
 
+    def exists(self, number: str) -> bool:
+        """Return whether a shipment with this number/GUID exists (cheap check).
+
+        A lightweight existence probe (`ExistsTransaction`) that does not fetch
+        the shipment. Reuses the facade's OPEN session; accessing it before
+        `Magaya.open()` raises `SessionError`.
+        """
+        return self._magaya.client.exists_transaction(
+            self._magaya.access_key, "SH", number
+        )
+
+    def status(self, number: str) -> str:
+        """Return this shipment's status without fetching the full record.
+
+        A lightweight probe (`GetTransactionStatus`, e.g. "Delivered"). Reuses
+        the facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`. Raises `ApiError` if no such shipment exists.
+        """
+        return self._magaya.client.get_transaction_status(
+            self._magaya.access_key, "SH", number
+        )
+
 
 class EntitiesResource:
     """Read entities and their contacts through the facade's managed session."""
@@ -211,3 +233,25 @@ class InvoicesResource:
             self._magaya.access_key, "IN", number, flags=flags
         )
         return self._log_parser.parse(trans_xml)
+
+    def exists(self, number: str) -> bool:
+        """Return whether an invoice with this number/GUID exists (cheap check).
+
+        A lightweight existence probe (`ExistsTransaction`) that does not fetch
+        the invoice. Reuses the facade's OPEN session; accessing it before
+        `Magaya.open()` raises `SessionError`.
+        """
+        return self._magaya.client.exists_transaction(
+            self._magaya.access_key, "IN", number
+        )
+
+    def status(self, number: str) -> str:
+        """Return this invoice's status without fetching the full record.
+
+        A lightweight probe (`GetTransactionStatus`, e.g. "Open", "Paid").
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`. Raises `ApiError` if no such invoice exists.
+        """
+        return self._magaya.client.get_transaction_status(
+            self._magaya.access_key, "IN", number
+        )

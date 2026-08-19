@@ -377,6 +377,49 @@ class MagayaSoapClient:
         # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
         return self._text(root, "trans_xml") or ""
 
+    # -- existence & status (session-scoped, single-call) ------------------
+
+    def exists_transaction(self, access_key: int, trans_type: str, number: str) -> bool:
+        """Return whether a transaction of `trans_type` with `number` exists.
+
+        `ExistsTransaction` reports a missing transaction via the
+        `transaction_not_found` return code (not a SOAP fault) together with an
+        `exist_trans` flag of 0, so we treat that code as "does not exist"
+        rather than an error. Any other non-`no_error` code still raises
+        `ApiError`. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:ExistsTransaction xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:ExistsTransaction>"
+        )
+        root = self._call(body)
+        code = self._text(root, "return")
+        if code not in (None, _NO_ERROR, "transaction_not_found"):
+            raise ApiError(f"Magaya API error: {code}")
+        return (self._text(root, "exist_trans") or "").strip() == "1"
+
+    def get_transaction_status(self, access_key: int, trans_type: str, number: str) -> str:
+        """Return the status string of a transaction (`GetTransactionStatus`).
+
+        A lightweight probe for just the status (e.g. "Delivered", "Open")
+        without fetching the full transaction XML. Raises `ApiError` if Magaya
+        has no such transaction. Assumes the caller already holds a valid
+        `access_key`.
+        """
+        body = (
+            f'<q1:GetTransactionStatus xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetTransactionStatus>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_status") or ""
+
     # -- transaction log (session-scoped, single-call) ---------------------
 
     def query_log(

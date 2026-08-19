@@ -136,6 +136,24 @@ def _fault_response(faultstring: str) -> str:
     )
 
 
+def _exists_transaction_response(exist_trans: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:ExistsTransactionResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:exist_trans>{exist_trans}</snp:exist_trans>"
+        "</snp:ExistsTransactionResponse>"
+    )
+
+
+def _transaction_status_response(status: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:GetTransactionStatusResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:trans_status>{escape(status)}</snp:trans_status>"
+        "</snp:GetTransactionStatusResponse>"
+    )
+
+
 def _client(handler) -> MagayaSoapClient:
     transport = httpx.MockTransport(handler)
     http_client = httpx.Client(transport=transport)
@@ -279,6 +297,35 @@ def test_get_transaction_not_found_raises_api_error():
     with pytest.raises(ApiError) as exc:
         client.get_transaction(access_key=1, trans_type="SH", number="does-not-exist")
     assert "transaction_not_found" in str(exc.value)
+
+
+def test_exists_transaction_true_when_found():
+    client = _client(_single_response(_exists_transaction_response("1")))
+    assert client.exists_transaction(1, "SH", "TMSE2690826") is True
+
+
+def test_exists_transaction_false_on_not_found_without_raising():
+    # `transaction_not_found` + exist_trans=0 means "does not exist", NOT an
+    # error — validated live. The method returns False rather than raising.
+    client = _client(
+        _single_response(
+            _exists_transaction_response("0", return_code="transaction_not_found")
+        )
+    )
+    assert client.exists_transaction(1, "SH", "NOPE") is False
+
+
+def test_exists_transaction_raises_on_other_error():
+    client = _client(
+        _single_response(_exists_transaction_response("0", return_code="access_denied"))
+    )
+    with pytest.raises(ApiError):
+        client.exists_transaction(1, "SH", "x")
+
+
+def test_get_transaction_status_returns_status_string():
+    client = _client(_single_response(_transaction_status_response("Delivered")))
+    assert client.get_transaction_status(1, "SH", "TMSE2690826") == "Delivered"
 
 
 def test_query_log_sends_documented_params_and_unescapes_response():
