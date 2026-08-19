@@ -1,10 +1,8 @@
 """Command-line entry point.
 
-Read-only capabilities that work end to end today: validating a Magaya XML file
-and listing shipments for a date range.
+Read-only capabilities that work end to end today: listing shipments for a date
+range and listing entities.
 
-    magaya validate path/to/transaction.xml
-    magaya validate path/to/transaction.xml --xsd schemas/magaya.xsd
     magaya shipments --from 2025-01-01 --to 2025-01-31
     magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --json
     magaya entities
@@ -14,15 +12,13 @@ and listing shipments for a date range.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import typer
 
 from magaya_toolkit.domain.entity import EntityType
-from magaya_toolkit.domain.errors import ApiError, XmlValidationError
+from magaya_toolkit.domain.errors import ApiError
 from magaya_toolkit.facade import Magaya
 from magaya_toolkit.infrastructure.config import MagayaSettings
-from magaya_toolkit.infrastructure.xml.lxml_validator import LxmlValidator
 
 # Map the CLI `--type` choices to the domain `EntityType` codes. `None` (the
 # option's default) means "all entities" (no type filter).
@@ -38,27 +34,12 @@ _ENTITY_TYPES = {
     "division": EntityType.DIVISION,
 }
 
-app = typer.Typer(help="Build and validate Magaya API transactions.")
+app = typer.Typer(help="Read data from the Magaya API.")
 
 
 @app.callback()
 def main() -> None:
-    """Magaya toolkit CLI. Run a subcommand (e.g. `validate`)."""
-
-
-@app.command()
-def validate(
-    xml_file: Path = typer.Argument(..., exists=True, readable=True),
-    xsd: Path = typer.Option(None, "--xsd", help="Optional XSD schema to validate against."),
-) -> None:
-    """Validate an XML file (well-formedness, plus schema if --xsd is given)."""
-    validator = LxmlValidator(xsd_path=xsd)
-    try:
-        validator.validate(xml_file.read_bytes())
-    except XmlValidationError as exc:
-        typer.secho(f"INVALID: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-    typer.secho(f"OK: {xml_file} is valid.", fg=typer.colors.GREEN)
+    """Magaya toolkit CLI. Run a subcommand (e.g. `shipments` or `entities`)."""
 
 
 def _eta(shipment) -> str:

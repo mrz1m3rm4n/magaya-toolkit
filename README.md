@@ -1,7 +1,7 @@
 # magaya-toolkit
 
-A small, typed Python toolkit to **read data from the Magaya API** and **validate
-Magaya XML** — without hand-writing SOAP envelopes or XML.
+A small, typed Python toolkit to **read data from the Magaya API** — without
+hand-writing SOAP envelopes or parsing XML.
 
 The Magaya API is an XML Web Service (SOAP over HTTPS). This toolkit wraps it
 behind a clean, typed SDK so callers work with Python objects, not raw XML.
@@ -80,12 +80,6 @@ do from Python via the facade.
   `employee`, `salesman`, or `division`; omit it for all entities. (`customer`
   is accepted as an alias of `client` — see the library note above.)
 
-- **Validate a Magaya XML file** — well-formedness, plus optional XSD:
-  ```bash
-  magaya validate path/to/transaction.xml
-  magaya validate path/to/transaction.xml --xsd schemas/Shipment.xsd
-  ```
-
 ## Status
 
 | Capability | Status |
@@ -95,10 +89,8 @@ do from Python via the facade.
 | Typed `Shipment` read model + XML parser | ✅ working |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
-| CLI (`magaya shipments`, `magaya entities`, `magaya validate`) | ✅ working |
-| XML validation (well-formedness + optional XSD) | ✅ working |
+| CLI (`magaya shipments`, `magaya entities`) | ✅ working |
 | Read other transaction types (invoices, rates…) | ⏳ not yet — same pattern |
-| Populate `schemas/` with the official Magaya XSDs | ⏳ pending |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
 
 ---
@@ -269,9 +261,6 @@ uv run magaya entities
 
 # Customers whose name starts with "MUE", as JSON
 uv run magaya entities MUE --type client --json
-
-# Validate a Magaya XML file against an XSD
-uv run magaya validate transaction.xml --xsd schemas/Shipment.xsd
 ```
 
 `magaya shipments` options:
@@ -306,12 +295,12 @@ src/magaya_toolkit/
 │   ├── entity.py      #   Entity, EntityContact, EntityType read models
 │   └── errors.py      #   MagayaError, ApiError, XmlValidationError, SessionError
 ├── application/       # ports (Protocols) + use cases — the boundaries
-│   ├── ports.py       #   MagayaReader, ShipmentParser, EntityParser, XmlValidator
+│   ├── ports.py       #   MagayaReader, ShipmentParser, EntityParser
 │   └── use_cases.py   #   list_shipments(...), collect_shipments(...)
 └── infrastructure/    # adapters that implement the ports
     ├── config.py      #   MagayaSettings (.env)
     ├── soap/          #   MagayaSoapClient (httpx, hand-built SOAP 1.1)
-    └── xml/           #   LxmlShipmentParser, LxmlEntityParser, LxmlValidator
+    └── xml/           #   LxmlShipmentParser, LxmlEntityParser
 ```
 
 Dependencies point inward: `infrastructure` depends on `application`/`domain`,
@@ -350,8 +339,6 @@ Useful facts about the Magaya API, verified against a live cloud instance:
   `<Entities>` (`Client`, `Carrier`, `Vendor`, …) is the entity kind.
 - **XML namespace.** Returned transactions are namespaced under
   `http://www.magaya.com/XMLSchema/V1`.
-- **Official XSDs** (v11.5.1+, public): `https://schema.magaya.net/Core/V1/*.xsd`
-  (`Shipment.xsd`, `Accounting.xsd`, `Order.xsd`, `common.xsd`, …).
 - **Best practices** (from the Magaya API docs): one API user per integration;
   no parallel calls; exponential backoff on `Timeout`; prefer
   `GetFirst`/`GetNextTransbyDate` over large single-shot date ranges.

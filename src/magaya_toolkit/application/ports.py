@@ -13,14 +13,6 @@ from magaya_toolkit.domain.entity import Entity, EntityContact
 from magaya_toolkit.domain.shipment import Shipment
 
 
-class XmlValidator(Protocol):
-    """Validates a Magaya XML document against an expected structure."""
-
-    def validate(self, xml: bytes) -> None:
-        """Raise `XmlValidationError` if `xml` is not valid; return None if OK."""
-        ...
-
-
 class ShipmentParser(Protocol):
     """Turns a Magaya `<Shipments>` XML document into domain shipments."""
 
