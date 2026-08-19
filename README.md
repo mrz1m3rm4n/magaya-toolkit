@@ -88,6 +88,7 @@ do from Python via the facade.
 | Read shipments by date range (`GetFirst`/`GetNextTransbyDate`) | ✅ working, validated live |
 | Typed `Shipment` read model + XML parser | ✅ working |
 | Read one shipment by number/GUID (`GetTransaction`) | ✅ working, validated live |
+| Read invoices (`QueryLog` refs + `GetTransaction`) | ✅ working, validated live |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
@@ -108,12 +109,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 8 |
-| 🟡 Read, pending | 28 |
+| ✅ Done | 9 |
+| 🟡 Read, pending | 27 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 6 / 34 read methods (~18%).**
+**Read coverage: 7 / 34 read methods (~21%).**
 
 ### Session
 | Method | Status |
@@ -169,7 +170,7 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 ### Transaction log
 | Method | Status |
 | --- | --- |
-| QueryLog | 🟡 |
+| QueryLog | ✅ |
 | QueryLogJS | 🟡 |
 
 ### Online / purchase / sales orders

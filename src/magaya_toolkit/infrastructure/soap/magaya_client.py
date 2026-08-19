@@ -290,6 +290,48 @@ class MagayaSoapClient:
         # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
         return self._text(root, "trans_xml") or ""
 
+    # -- transaction log (session-scoped, single-call) ---------------------
+
+    def query_log(
+        self,
+        access_key: int,
+        start_date: str,
+        end_date: str,
+        log_entry_type: int,
+        trans_type: str,
+        flags: int = 0,
+    ) -> str:
+        """Return the raw `trans_list_xml` of a transaction-log query (`QueryLog`).
+
+        Reads the change log for one `trans_type` (e.g. "IN" for invoices) over a
+        date range within an OPEN session, returning a `<GUIDItems>` document of
+        matching transaction references. Single-call read (no pagination cookie).
+        Assumes the caller already holds a valid `access_key`.
+
+        Dates use the `"yyyy-MM-ddTHH:mm:ss"` format. `log_entry_type` is a
+        bitmask of the log operations to include (Creation=0x01, Deletion=0x02,
+        Edition=0x04, Cleanup=0x08). Wide date ranges time out — keep the window
+        narrow.
+
+        The SOAP parameter order (`access_key`, `start_date`, `end_date`,
+        `log_entry_type`, `trans_type`, `flags`) mirrors the Magaya API
+        reference for `QueryLog`.
+        """
+        body = (
+            f'<q1:QueryLog xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<log_entry_type xsi:type="xsd:int">{int(log_entry_type)}</log_entry_type>'
+            f'<trans_type xsi:type="xsd:string">{escape(trans_type)}</trans_type>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            "</q1:QueryLog>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped trans_list_xml when reading .text.
+        return self._text(root, "trans_list_xml") or ""
+
     @classmethod
     def _more_results(cls, root: etree._Element) -> bool:
         """Parse the `<more_results>` 1/0 flag into a bool."""

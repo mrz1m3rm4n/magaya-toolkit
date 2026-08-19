@@ -16,9 +16,13 @@ from typing import TYPE_CHECKING
 
 from magaya_toolkit.application.use_cases import collect_shipments
 from magaya_toolkit.domain.entity import Entity, EntityContact, EntityType
+from magaya_toolkit.domain.invoice import Invoice
 from magaya_toolkit.domain.shipment import Shipment
+from magaya_toolkit.domain.transaction import TransactionRef
 from magaya_toolkit.infrastructure.xml.entity_parser import LxmlEntityParser
+from magaya_toolkit.infrastructure.xml.invoice_parser import LxmlInvoiceParser
 from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
+from magaya_toolkit.infrastructure.xml.transaction_parser import LxmlGuidItemsParser
 
 if TYPE_CHECKING:
     from magaya_toolkit.facade import Magaya
@@ -111,3 +115,53 @@ class EntitiesResource:
             self._magaya.access_key, entity_guid, flags=flags
         )
         return self._parser.parse_contacts(contact_list_xml)
+
+
+class InvoicesResource:
+    """Read invoices through the facade's managed session."""
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._log_parser = LxmlGuidItemsParser()
+        self._invoice_parser = LxmlInvoiceParser()
+
+    def query(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        log_entry_type: int = 1,
+        flags: int = 0,
+    ) -> list[TransactionRef]:
+        """List invoice references logged in a date range via `QueryLog`.
+
+        Returns lightweight `TransactionRef` pointers; fetch the full invoice for
+        each with `get`. Dates use the `yyyy-MM-ddTHH:mm:ss` format; keep the
+        window narrow (wide ranges time out). `log_entry_type` is a bitmask of
+        log operations to include and defaults to 1 (Creation).
+
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        trans_list_xml = self._magaya.client.query_log(
+            self._magaya.access_key,
+            start_date,
+            end_date,
+            log_entry_type,
+            "IN",
+            flags,
+        )
+        return self._log_parser.parse(trans_list_xml)
+
+    def get(self, number: str, *, flags: int = 0) -> Invoice:
+        """Fetch a single invoice by its number or GUID via `GetTransaction`.
+
+        `number` is the invoice number or the transaction GUID —
+        `GetTransaction` accepts either. Reuses the facade's OPEN session;
+        accessing it before `Magaya.open()` raises `SessionError`. Raises
+        `ApiError` if Magaya has no such transaction.
+        """
+        trans_xml = self._magaya.client.get_transaction(
+            self._magaya.access_key, "IN", number, flags=flags
+        )
+        return self._invoice_parser.parse_one(trans_xml)

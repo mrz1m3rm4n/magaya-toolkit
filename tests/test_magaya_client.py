@@ -80,6 +80,15 @@ def _get_transaction_response(trans_xml: str, return_code: str = "no_error") -> 
     )
 
 
+def _query_log_response(trans_list_xml: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:QueryLogResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:trans_list_xml>{escape(trans_list_xml)}</snp:trans_list_xml>"
+        "</snp:QueryLogResponse>"
+    )
+
+
 def _fault_response(faultstring: str) -> str:
     return _soap(
         "<soap:Fault>"
@@ -232,6 +241,46 @@ def test_get_transaction_not_found_raises_api_error():
     with pytest.raises(ApiError) as exc:
         client.get_transaction(access_key=1, trans_type="SH", number="does-not-exist")
     assert "transaction_not_found" in str(exc.value)
+
+
+def test_query_log_sends_documented_params_and_unescapes_response():
+    captured: dict[str, str] = {}
+    # Opaque payload: this test only proves the client passes the raw
+    # trans_list_xml through (unescaped). The <GUIDItems> shape is validated by
+    # the parser tests.
+    inner = (
+        '<GUIDItems xmlns="http://www.magaya.com/XMLSchema/V1">'
+        "<GUIDItem><GUID>g-1</GUID><Type>Invoice</Type></GUIDItem>"
+        "</GUIDItems>"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(
+            200,
+            text=_query_log_response(inner),
+            headers={"Content-Type": "text/xml"},
+        )
+
+    client = _client(handler)
+    result = client.query_log(
+        access_key=42,
+        start_date="2026-07-01T00:00:00",
+        end_date="2026-07-31T23:59:59",
+        log_entry_type=1,
+        trans_type="IN",
+    )
+
+    body = captured["body"]
+    assert ":QueryLog" in body
+    # Parameters and their wire types must match the Magaya API reference.
+    assert '<access_key xsi:type="xsd:int">42</access_key>' in body
+    assert '<start_date xsi:type="xsd:string">2026-07-01T00:00:00</start_date>' in body
+    assert '<end_date xsi:type="xsd:string">2026-07-31T23:59:59</end_date>' in body
+    assert '<log_entry_type xsi:type="xsd:int">1</log_entry_type>' in body
+    assert '<trans_type xsi:type="xsd:string">IN</trans_type>' in body
+    assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert result == inner
 
 
 def test_get_first_sends_backwards_order_as_int():

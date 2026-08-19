@@ -16,7 +16,9 @@ from magaya_toolkit.domain.errors import (
     SessionError,
     XmlValidationError,
 )
+from magaya_toolkit.domain.invoice import Invoice
 from magaya_toolkit.domain.shipment import Shipment
+from magaya_toolkit.domain.transaction import TransactionRef
 from magaya_toolkit.facade import Magaya
 from magaya_toolkit.infrastructure.config import MagayaSettings
 
@@ -28,11 +30,13 @@ __all__ = [
     "Entity",
     "EntityContact",
     "EntityType",
+    "Invoice",
     "Magaya",
     "MagayaError",
     "MagayaSettings",
     "Measure",
     "SessionError",
     "Shipment",
+    "TransactionRef",
     "XmlValidationError",
 ]
