@@ -60,6 +60,23 @@ def _get_transaction_response(trans_xml: str) -> str:
     )
 
 
+def _accounting_transactions_response(trans_xml: str) -> str:
+    return _soap(
+        f"<snp:GetAccountingTransactionsResponse {_NS}>"
+        f"<snp:return>no_error</snp:return>"
+        f"<snp:trans_xml>{escape(trans_xml)}</snp:trans_xml>"
+        "</snp:GetAccountingTransactionsResponse>"
+    )
+
+
+def _guid_items_doc() -> str:
+    return (
+        f'<GUIDItems xmlns="{_DATA_NS}">'
+        "<GUIDItem><GUID>inv-guid-1</GUID><Type>Invoice</Type></GUIDItem>"
+        "</GUIDItems>"
+    )
+
+
 def _shipment_doc() -> str:
     # Single-transaction shape: the <OceanShipment> element is the root.
     return (
@@ -72,7 +89,12 @@ def _shipment_doc() -> str:
 
 
 def _method(body: str) -> str | None:
-    for method in ("StartSession", "GetTransaction", "EndSession"):
+    for method in (
+        "StartSession",
+        "GetTransaction",
+        "GetAccountingTransactions",
+        "EndSession",
+    ):
         if f":{method}" in body:
             return method
     return None
@@ -118,6 +140,33 @@ def test_get_reads_single_shipment_and_sends_type_sh_and_number():
     assert '<number xsi:type="xsd:string">TMSE2690826</number>' in get_body
 
 
+def test_accounting_transactions_reads_refs_and_sends_type_sh_and_number():
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("utf-8")
+        bodies.append(body)
+        method = _method(body)
+        if method == "StartSession":
+            text = _start_session_response(999)
+        elif method == "GetAccountingTransactions":
+            text = _accounting_transactions_response(_guid_items_doc())
+        else:
+            text = _end_session_response()
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler) as magaya:
+        refs = magaya.shipments.accounting_transactions("TMSE2690826")
+
+    assert len(refs) == 1
+    assert refs[0].guid == "inv-guid-1"
+    assert refs[0].type == "Invoice"
+
+    tx_body = next(b for b in bodies if _method(b) == "GetAccountingTransactions")
+    assert '<type xsi:type="xsd:string">SH</type>' in tx_body
+    assert '<number xsi:type="xsd:string">TMSE2690826</number>' in tx_body
+
+
 def test_get_before_open_raises_session_error():
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never called
         raise AssertionError("no request should be made before the session is open")
@@ -125,3 +174,12 @@ def test_get_before_open_raises_session_error():
     magaya = _facade(handler)
     with pytest.raises(SessionError):
         magaya.shipments.get("TMSE2690826")
+
+
+def test_accounting_transactions_before_open_raises_session_error():
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never called
+        raise AssertionError("no request should be made before the session is open")
+
+    magaya = _facade(handler)
+    with pytest.raises(SessionError):
+        magaya.shipments.accounting_transactions("TMSE2690826")

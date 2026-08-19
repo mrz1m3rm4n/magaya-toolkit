@@ -34,6 +34,7 @@ class ShipmentsResource:
     def __init__(self, magaya: Magaya) -> None:
         self._magaya = magaya
         self._parser = LxmlShipmentParser()
+        self._log_parser = LxmlGuidItemsParser()
 
     def list(
         self,
@@ -74,6 +75,21 @@ class ShipmentsResource:
         )
         return self._parser.parse_one(trans_xml)
 
+    def accounting_transactions(
+        self, number: str, *, flags: int = 0
+    ) -> list[TransactionRef]:
+        """List the invoices/bills billed for this shipment (by shipment number).
+
+        Returns lightweight `TransactionRef` pointers to the accounting
+        transactions related to the shipment; fetch each full invoice with
+        `Magaya.invoices.get(...)`. Reuses the facade's OPEN session; accessing
+        it before `Magaya.open()` raises `SessionError`.
+        """
+        trans_xml = self._magaya.client.get_accounting_transactions(
+            self._magaya.access_key, "SH", number, flags=flags
+        )
+        return self._log_parser.parse(trans_xml)
+
 
 class EntitiesResource:
     """Read entities and their contacts through the facade's managed session."""
@@ -81,6 +97,7 @@ class EntitiesResource:
     def __init__(self, magaya: Magaya) -> None:
         self._magaya = magaya
         self._parser = LxmlEntityParser()
+        self._log_parser = LxmlGuidItemsParser()
 
     def find(
         self,
@@ -115,6 +132,22 @@ class EntitiesResource:
             self._magaya.access_key, entity_guid, flags=flags
         )
         return self._parser.parse_contacts(contact_list_xml)
+
+    def transactions(
+        self, entity_guid: str, start_date: str, end_date: str, *, flags: int = 0
+    ) -> list[TransactionRef]:
+        """List this entity's accounting-transaction references in a date range.
+
+        Returns lightweight `TransactionRef` pointers to the entity's accounting
+        transactions (invoices, bills, …); fetch each full invoice with
+        `Magaya.invoices.get(...)`. Dates use the `yyyy-MM-dd` format. Reuses the
+        facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`.
+        """
+        acctrans_list_xml = self._magaya.client.get_entity_transactions(
+            self._magaya.access_key, entity_guid, start_date, end_date, flags=flags
+        )
+        return self._log_parser.parse(acctrans_list_xml)
 
 
 class InvoicesResource:
@@ -165,3 +198,16 @@ class InvoicesResource:
             self._magaya.access_key, "IN", number, flags=flags
         )
         return self._invoice_parser.parse_one(trans_xml)
+
+    def related(self, number: str, *, flags: int = 0) -> list[TransactionRef]:
+        """List the transaction(s) related to this invoice (e.g. the shipment it bills).
+
+        Returns lightweight `TransactionRef` pointers to the related operations
+        transaction(s); fetch each full shipment with `Magaya.shipments.get(...)`.
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        trans_xml = self._magaya.client.get_related_transactions(
+            self._magaya.access_key, "IN", number, flags=flags
+        )
+        return self._log_parser.parse(trans_xml)

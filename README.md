@@ -89,6 +89,7 @@ do from Python via the facade.
 | Typed `Shipment` read model + XML parser | ✅ working |
 | Read one shipment by number/GUID (`GetTransaction`) | ✅ working, validated live |
 | Read invoices (`QueryLog` refs + `GetTransaction`) | ✅ working, validated live |
+| Related-transaction links (entity/shipment/invoice → refs) | ✅ working, validated live |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
@@ -109,12 +110,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 9 |
-| 🟡 Read, pending | 27 |
+| ✅ Done | 12 |
+| 🟡 Read, pending | 24 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 7 / 34 read methods (~21%).**
+**Read coverage: 10 / 34 read methods (~29%).**
 
 ### Session
 | Method | Status |
@@ -134,9 +135,9 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | ExistsTransaction | 🟡 |
 | GetTransactionStatus | 🟡 |
 | GetTransactionsByBillingClient | 🟡 |
-| GetRelatedTransactions | 🟡 |
-| GetAccountingTransactions | 🟡 |
-| GetEntityTransactions | 🟡 |
+| GetRelatedTransactions | ✅ |
+| GetAccountingTransactions | ✅ |
+| GetEntityTransactions | ✅ |
 | SetTransaction | 🚫 |
 | DeleteTransaction | 🚫 |
 | RenameTransaction | 🚫 |

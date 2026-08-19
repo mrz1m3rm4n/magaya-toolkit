@@ -70,6 +70,23 @@ def _get_transaction_response(trans_xml: str) -> str:
     )
 
 
+def _related_transactions_response(trans_xml: str) -> str:
+    return _soap(
+        f"<snp:GetRelatedTransactionsResponse {_NS}>"
+        f"<snp:return>no_error</snp:return>"
+        f"<snp:trans_xml>{escape(trans_xml)}</snp:trans_xml>"
+        "</snp:GetRelatedTransactionsResponse>"
+    )
+
+
+def _related_guid_items_doc() -> str:
+    return (
+        f'<GUIDItems xmlns="{_DATA_NS}">'
+        "<GUIDItem><GUID>sh-guid-1</GUID><Type>OceanShipment</Type></GUIDItem>"
+        "</GUIDItems>"
+    )
+
+
 def _guid_items_doc() -> str:
     return (
         f'<GUIDItems xmlns="{_DATA_NS}">'
@@ -93,7 +110,13 @@ def _invoice_doc() -> str:
 
 
 def _method(body: str) -> str | None:
-    for method in ("StartSession", "QueryLog", "GetTransaction", "EndSession"):
+    for method in (
+        "StartSession",
+        "QueryLog",
+        "GetTransaction",
+        "GetRelatedTransactions",
+        "EndSession",
+    ):
         if f":{method}" in body:
             return method
     return None
@@ -169,6 +192,33 @@ def test_get_reads_single_invoice_and_sends_type_in_and_number():
     assert '<number xsi:type="xsd:string">F-78282</number>' in get_body
 
 
+def test_related_reads_refs_and_sends_type_in_and_number():
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("utf-8")
+        bodies.append(body)
+        method = _method(body)
+        if method == "StartSession":
+            text = _start_session_response(999)
+        elif method == "GetRelatedTransactions":
+            text = _related_transactions_response(_related_guid_items_doc())
+        else:
+            text = _end_session_response()
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler) as magaya:
+        refs = magaya.invoices.related("F-78282")
+
+    assert len(refs) == 1
+    assert refs[0].guid == "sh-guid-1"
+    assert refs[0].type == "OceanShipment"
+
+    related_body = next(b for b in bodies if _method(b) == "GetRelatedTransactions")
+    assert '<type xsi:type="xsd:string">IN</type>' in related_body
+    assert '<number xsi:type="xsd:string">F-78282</number>' in related_body
+
+
 def test_query_before_open_raises_session_error():
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never called
         raise AssertionError("no request should be made before the session is open")
@@ -185,3 +235,12 @@ def test_get_before_open_raises_session_error():
     magaya = _facade(handler)
     with pytest.raises(SessionError):
         magaya.invoices.get("F-78282")
+
+
+def test_related_before_open_raises_session_error():
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never called
+        raise AssertionError("no request should be made before the session is open")
+
+    magaya = _facade(handler)
+    with pytest.raises(SessionError):
+        magaya.invoices.related("F-78282")

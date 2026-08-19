@@ -89,6 +89,44 @@ def _query_log_response(trans_list_xml: str, return_code: str = "no_error") -> s
     )
 
 
+def _get_entity_transactions_response(acctrans_list_xml: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:GetEntityTransactionsResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:acctrans_list_xml>{escape(acctrans_list_xml)}</snp:acctrans_list_xml>"
+        "</snp:GetEntityTransactionsResponse>"
+    )
+
+
+def _get_accounting_transactions_response(trans_xml: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:GetAccountingTransactionsResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:trans_xml>{escape(trans_xml)}</snp:trans_xml>"
+        "</snp:GetAccountingTransactionsResponse>"
+    )
+
+
+def _get_related_transactions_response(trans_xml: str, return_code: str = "no_error") -> str:
+    return _soap(
+        f"<snp:GetRelatedTransactionsResponse {_NS}>"
+        f"<snp:return>{return_code}</snp:return>"
+        f"<snp:trans_xml>{escape(trans_xml)}</snp:trans_xml>"
+        "</snp:GetRelatedTransactionsResponse>"
+    )
+
+
+def _guid_items_doc() -> str:
+    # A minimal <GUIDItems> doc: children may carry only GUID + Type (no
+    # LogType/LogDate) — the related-transaction reads return exactly this shape.
+    return (
+        '<GUIDItems xmlns="http://www.magaya.com/XMLSchema/V1">'
+        "<GUIDItem><GUID>g-1</GUID><Type>Invoice</Type></GUIDItem>"
+        "<GUIDItem><GUID>g-2</GUID><Type>Invoice</Type></GUIDItem>"
+        "</GUIDItems>"
+    )
+
+
 def _fault_response(faultstring: str) -> str:
     return _soap(
         "<soap:Fault>"
@@ -280,6 +318,89 @@ def test_query_log_sends_documented_params_and_unescapes_response():
     assert '<log_entry_type xsi:type="xsd:int">1</log_entry_type>' in body
     assert '<trans_type xsi:type="xsd:string">IN</trans_type>' in body
     assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert result == inner
+
+
+def test_get_entity_transactions_sends_documented_params_and_unescapes_response():
+    captured: dict[str, str] = {}
+    inner = _guid_items_doc()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(
+            200,
+            text=_get_entity_transactions_response(inner),
+            headers={"Content-Type": "text/xml"},
+        )
+
+    client = _client(handler)
+    result = client.get_entity_transactions(
+        access_key=42,
+        entity_uuid="ent-guid-1",
+        start_date="2026-07-01",
+        end_date="2026-07-31",
+    )
+
+    body = captured["body"]
+    assert ":GetEntityTransactions" in body
+    # Parameters, order and their wire types must match the Magaya API reference.
+    assert '<access_key xsi:type="xsd:int">42</access_key>' in body
+    assert '<entity_uuid xsi:type="xsd:string">ent-guid-1</entity_uuid>' in body
+    assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert '<start_date xsi:type="xsd:string">2026-07-01</start_date>' in body
+    assert '<end_date xsi:type="xsd:string">2026-07-31</end_date>' in body
+    assert result == inner
+
+
+def test_get_accounting_transactions_sends_documented_params_and_unescapes_response():
+    captured: dict[str, str] = {}
+    inner = _guid_items_doc()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(
+            200,
+            text=_get_accounting_transactions_response(inner),
+            headers={"Content-Type": "text/xml"},
+        )
+
+    client = _client(handler)
+    result = client.get_accounting_transactions(
+        access_key=42, trans_type="SH", number="TMSE2690826"
+    )
+
+    body = captured["body"]
+    assert ":GetAccountingTransactions" in body
+    assert '<access_key xsi:type="xsd:int">42</access_key>' in body
+    assert '<type xsi:type="xsd:string">SH</type>' in body
+    assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert '<number xsi:type="xsd:string">TMSE2690826</number>' in body
+    assert result == inner
+
+
+def test_get_related_transactions_sends_documented_params_and_unescapes_response():
+    captured: dict[str, str] = {}
+    inner = _guid_items_doc()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(
+            200,
+            text=_get_related_transactions_response(inner),
+            headers={"Content-Type": "text/xml"},
+        )
+
+    client = _client(handler)
+    result = client.get_related_transactions(
+        access_key=42, trans_type="IN", number="F-78282"
+    )
+
+    body = captured["body"]
+    assert ":GetRelatedTransactions" in body
+    assert '<access_key xsi:type="xsd:int">42</access_key>' in body
+    assert '<type xsi:type="xsd:string">IN</type>' in body
+    assert '<flags xsi:type="xsd:int">0</flags>' in body
+    assert '<number xsi:type="xsd:string">F-78282</number>' in body
     assert result == inner
 
 

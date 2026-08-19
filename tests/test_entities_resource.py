@@ -70,6 +70,23 @@ def _contacts_response(contact_list_xml: str) -> str:
     )
 
 
+def _entity_transactions_response(acctrans_list_xml: str) -> str:
+    return _soap(
+        f"<snp:GetEntityTransactionsResponse {_NS}>"
+        f"<snp:return>no_error</snp:return>"
+        f"<snp:acctrans_list_xml>{escape(acctrans_list_xml)}</snp:acctrans_list_xml>"
+        "</snp:GetEntityTransactionsResponse>"
+    )
+
+
+def _guid_items_doc() -> str:
+    return (
+        f'<GUIDItems xmlns="{_DATA_NS}">'
+        "<GUIDItem><GUID>inv-guid-1</GUID><Type>Invoice</Type></GUIDItem>"
+        "</GUIDItems>"
+    )
+
+
 def _entities_doc() -> str:
     return (
         f'<Entities xmlns="{_DATA_NS}">'
@@ -94,6 +111,7 @@ def _method(body: str) -> str | None:
         "GetEntitiesOfType",
         "GetEntities",
         "GetEntityContacts",
+        "GetEntityTransactions",
         "EndSession",
     ):
         if f":{method}" in body:
@@ -184,6 +202,34 @@ def test_contacts_returns_contacts():
     assert contacts[0].contact_email == "desk@acme.test"
 
 
+def test_transactions_reads_refs_and_sends_entity_uuid_and_dates():
+    bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode("utf-8")
+        bodies.append(body)
+        method = _method(body)
+        if method == "StartSession":
+            text = _start_session_response(999)
+        elif method == "GetEntityTransactions":
+            text = _entity_transactions_response(_guid_items_doc())
+        else:
+            text = _end_session_response()
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler) as magaya:
+        refs = magaya.entities.transactions("ent-guid-1", "2026-07-01", "2026-07-31")
+
+    assert len(refs) == 1
+    assert refs[0].guid == "inv-guid-1"
+    assert refs[0].type == "Invoice"
+
+    tx_body = next(b for b in bodies if _method(b) == "GetEntityTransactions")
+    assert '<entity_uuid xsi:type="xsd:string">ent-guid-1</entity_uuid>' in tx_body
+    assert '<start_date xsi:type="xsd:string">2026-07-01</start_date>' in tx_body
+    assert '<end_date xsi:type="xsd:string">2026-07-31</end_date>' in tx_body
+
+
 def test_using_entities_before_open_raises_session_error():
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never called
         raise AssertionError("no request should be made before the session is open")
@@ -193,3 +239,5 @@ def test_using_entities_before_open_raises_session_error():
         magaya.entities.find()
     with pytest.raises(SessionError):
         magaya.entities.contacts("c1")
+    with pytest.raises(SessionError):
+        magaya.entities.transactions("c1", "2026-07-01", "2026-07-31")

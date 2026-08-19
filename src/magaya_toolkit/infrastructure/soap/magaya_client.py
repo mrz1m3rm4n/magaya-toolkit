@@ -290,6 +290,93 @@ class MagayaSoapClient:
         # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
         return self._text(root, "trans_xml") or ""
 
+    # -- related transaction reads (session-scoped, single-call) -----------
+
+    def get_entity_transactions(
+        self,
+        access_key: int,
+        entity_uuid: str,
+        start_date: str,
+        end_date: str,
+        flags: int = 0,
+    ) -> str:
+        """Return the raw `acctrans_list_xml` of an entity's accounting transactions.
+
+        All accounting transactions (invoices, bills, …) of one entity within a
+        date range, as a `<GUIDItems>` document. Single-call read (no pagination
+        cookie). Dates use the `"yyyy-MM-dd"` format (any time part is ignored).
+        Assumes the caller already holds a valid `access_key`.
+
+        The SOAP parameter order (`access_key`, `entity_uuid`, `flags`,
+        `start_date`, `end_date`) mirrors the Magaya API reference for
+        `GetEntityTransactions`.
+        """
+        body = (
+            f'<q1:GetEntityTransactions xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<entity_uuid xsi:type="xsd:string">{escape(entity_uuid)}</entity_uuid>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            "</q1:GetEntityTransactions>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped acctrans_list_xml when reading .text.
+        return self._text(root, "acctrans_list_xml") or ""
+
+    def get_accounting_transactions(
+        self, access_key: int, trans_type: str, number: str, flags: int = 0
+    ) -> str:
+        """Return the raw `trans_xml` of accounting transactions for one operation.
+
+        The accounting transactions (invoices, bills) related to an operations
+        transaction — e.g. a shipment — identified by `trans_type` + `number`,
+        as a `<GUIDItems>` document. Single-call read (no pagination cookie).
+        Assumes the caller already holds a valid `access_key`.
+
+        The SOAP parameter order (`access_key`, `type`, `flags`, `number`)
+        mirrors the Magaya API reference for `GetAccountingTransactions`.
+        """
+        body = (
+            f'<q1:GetAccountingTransactions xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetAccountingTransactions>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
+        return self._text(root, "trans_xml") or ""
+
+    def get_related_transactions(
+        self, access_key: int, trans_type: str, number: str, flags: int = 0
+    ) -> str:
+        """Return the raw `trans_xml` of transactions related to an accounting one.
+
+        The transaction(s) related to an invoice/bill — e.g. the shipment it
+        bills — identified by `trans_type` + `number`, as a `<GUIDItems>`
+        document. Single-call read (no pagination cookie). Assumes the caller
+        already holds a valid `access_key`.
+
+        The SOAP parameter order (`access_key`, `type`, `flags`, `number`)
+        mirrors the Magaya API reference for `GetRelatedTransactions`.
+        """
+        body = (
+            f'<q1:GetRelatedTransactions xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetRelatedTransactions>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped trans_xml when reading .text.
+        return self._text(root, "trans_xml") or ""
+
     # -- transaction log (session-scoped, single-call) ---------------------
 
     def query_log(
