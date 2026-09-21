@@ -539,6 +539,104 @@ class MagayaSoapClient:
         self._check_return(root)
         return self._text(root, "ports_list_xml") or ""
 
+    # -- rates (session-scoped, single-call) -------------------------------
+    #
+    # The three rate reads share a lane filter: `org_port`, `dest_port` and
+    # `method`. Ports use Magaya's CountryCode+PortCode form ("MXZLO" is
+    # Manzanillo, Mexico); `method` is one of Air/Ocean/Ground. Any of them left
+    # blank means "no filter on this"; all blank returns the whole list. A port
+    # code that is not a working port comes back as the `invalid_operation`
+    # return code, which `_check_return` raises as `ApiError`.
+
+    def get_standard_rates(
+        self,
+        access_key: int,
+        org_port: str = "",
+        dest_port: str = "",
+        method: str = "",
+    ) -> str:
+        """Return the raw `rate_list_xml` of standard rates (`<StandardRates>`).
+
+        Single-call read (no pagination cookie). Assumes the caller already
+        holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetStandardRates xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f"{self._lane_filter(org_port, dest_port, method)}"
+            "</q1:GetStandardRates>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "rate_list_xml") or ""
+
+    def get_client_rates(
+        self,
+        access_key: int,
+        client_uuid: str,
+        org_port: str = "",
+        dest_port: str = "",
+        method: str = "",
+        include_standard: bool = False,
+    ) -> str:
+        """Return the raw `rate_list_xml` of one client's rates (`<ClientRates>`).
+
+        `include_standard` also returns the standard rates that apply to this
+        client. It MUST go on the wire as `xsd:int` (0/1); `xsd:boolean` is
+        rejected with "SOAP Invalid Request" — the same trap as
+        `backwards_order` on `GetFirstTransbyDate`.
+
+        `client_uuid` must belong to a Client entity; another entity is rejected
+        with `unknown_object`. Single-call read (no pagination cookie). Assumes
+        the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetClientRates xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<client_uuid xsi:type="xsd:string">{escape(client_uuid)}</client_uuid>'
+            f"{self._lane_filter(org_port, dest_port, method)}"
+            f'<include_standard xsi:type="xsd:int">{1 if include_standard else 0}'
+            "</include_standard>"
+            "</q1:GetClientRates>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "rate_list_xml") or ""
+
+    def get_carrier_rates(
+        self,
+        access_key: int,
+        carrier_uuid: str,
+        org_port: str = "",
+        dest_port: str = "",
+        method: str = "",
+    ) -> str:
+        """Return the raw `rate_list_xml` of one carrier's rates (`<CarrierRates>`).
+
+        `carrier_uuid` must belong to a Carrier entity; another entity is
+        rejected with `unknown_object`. Single-call read (no pagination cookie).
+        Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetCarrierRates xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<carrier_uuid xsi:type="xsd:string">{escape(carrier_uuid)}</carrier_uuid>'
+            f"{self._lane_filter(org_port, dest_port, method)}"
+            "</q1:GetCarrierRates>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "rate_list_xml") or ""
+
+    @staticmethod
+    def _lane_filter(org_port: str, dest_port: str, method: str) -> str:
+        """Build the origin/destination/mode filter the three rate reads share."""
+        return (
+            f'<org_port xsi:type="xsd:string">{escape(org_port)}</org_port>'
+            f'<dest_port xsi:type="xsd:string">{escape(dest_port)}</dest_port>'
+            f'<method xsi:type="xsd:string">{escape(method)}</method>'
+        )
+
     def _catalog_call(self, method: str, out_field: str, access_key: int) -> str:
         """Call a catalog read that takes only `access_key` and returns one XML field.
 

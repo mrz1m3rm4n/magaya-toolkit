@@ -206,6 +206,20 @@ class LxmlCatalogParser:
             remarks=self._text(children, "Remarks"),
         )
 
+    # -- reusable element readers ------------------------------------------
+    #
+    # `<Currency>` and `<ChargeDefinition>` are embedded verbatim in documents
+    # other than the catalogs (a rate carries both). These two let another
+    # parser reuse that reading instead of duplicating it.
+
+    def currency_from_element(self, element: etree._Element) -> Currency:
+        """Parse a `<Currency Code="…">` element wherever it appears."""
+        return self._to_currency(element)
+
+    def charge_definition_from_element(self, element: etree._Element) -> ChargeDefinition:
+        """Parse a `<ChargeDefinition>` element wherever it appears."""
+        return self._to_charge_definition(element)
+
     def _currency_child(self, children: dict[str, etree._Element]) -> Currency | None:
         """Parse a nested `<Currency Code="…">` element, if present."""
         node = children.get("Currency")

@@ -24,11 +24,13 @@ from magaya_toolkit.domain.catalog import (
 )
 from magaya_toolkit.domain.entity import Entity, EntityContact, EntityType
 from magaya_toolkit.domain.invoice import Invoice
+from magaya_toolkit.domain.rate import Rate
 from magaya_toolkit.domain.shipment import Shipment
 from magaya_toolkit.domain.transaction import TransactionRef
 from magaya_toolkit.infrastructure.xml.catalog_parser import LxmlCatalogParser
 from magaya_toolkit.infrastructure.xml.entity_parser import LxmlEntityParser
 from magaya_toolkit.infrastructure.xml.invoice_parser import LxmlInvoiceParser
+from magaya_toolkit.infrastructure.xml.rate_parser import LxmlRateParser
 from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
 from magaya_toolkit.infrastructure.xml.transaction_parser import LxmlGuidItemsParser
 
@@ -349,3 +351,80 @@ class CatalogResource:
         """
         ports_list_xml = self._magaya.client.get_working_ports()
         return self._parser.parse_ports(ports_list_xml)
+
+
+class RatesResource:
+    """Read freight rates through the facade's managed session.
+
+    All three reads share a lane filter — origin port, destination port and
+    transport mode. Ports use Magaya's CountryCode+PortCode form ("MXZLO" is
+    Manzanillo, Mexico; pair `Port.country_code` with `Port.code` from
+    `Magaya.catalog.ports()` to build one). `method` is "Air", "Ocean" or
+    "Ground". Leave any of them out to not filter on it; leave all out to read
+    the whole list.
+
+    A port code that is not a working port raises `ApiError`
+    (`invalid_operation`) rather than returning nothing.
+    """
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._parser = LxmlRateParser()
+
+    def standard(
+        self, *, org_port: str = "", dest_port: str = "", method: str = ""
+    ) -> list[Rate]:
+        """List the standard (house) rates.
+
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        rate_list_xml = self._magaya.client.get_standard_rates(
+            self._magaya.access_key, org_port, dest_port, method
+        )
+        return self._parser.parse(rate_list_xml)
+
+    def for_client(
+        self,
+        client_guid: str,
+        *,
+        org_port: str = "",
+        dest_port: str = "",
+        method: str = "",
+        include_standard: bool = False,
+    ) -> list[Rate]:
+        """List one client's negotiated rates.
+
+        Set `include_standard` to also get the standard rates that apply to this
+        client. `client_guid` must be a Client entity's GUID; another entity
+        type raises `ApiError` (`unknown_object`). Reuses the facade's OPEN
+        session; accessing it before `Magaya.open()` raises `SessionError`.
+        """
+        rate_list_xml = self._magaya.client.get_client_rates(
+            self._magaya.access_key,
+            client_guid,
+            org_port,
+            dest_port,
+            method,
+            include_standard,
+        )
+        return self._parser.parse(rate_list_xml)
+
+    def for_carrier(
+        self,
+        carrier_guid: str,
+        *,
+        org_port: str = "",
+        dest_port: str = "",
+        method: str = "",
+    ) -> list[Rate]:
+        """List one carrier's rates.
+
+        `carrier_guid` must be a Carrier entity's GUID; another entity type
+        raises `ApiError` (`unknown_object`). Reuses the facade's OPEN session;
+        accessing it before `Magaya.open()` raises `SessionError`.
+        """
+        rate_list_xml = self._magaya.client.get_carrier_rates(
+            self._magaya.access_key, carrier_guid, org_port, dest_port, method
+        )
+        return self._parser.parse(rate_list_xml)

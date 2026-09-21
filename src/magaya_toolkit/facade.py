@@ -19,6 +19,7 @@ from magaya_toolkit.resources import (
     CatalogResource,
     EntitiesResource,
     InvoicesResource,
+    RatesResource,
     ShipmentsResource,
 )
 
@@ -54,6 +55,7 @@ class Magaya:
         self.entities = EntitiesResource(self)
         self.invoices = InvoicesResource(self)
         self.catalog = CatalogResource(self)
+        self.rates = RatesResource(self)
 
     # -- session lifecycle -------------------------------------------------
 
