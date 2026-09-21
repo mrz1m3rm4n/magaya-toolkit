@@ -16,6 +16,7 @@ from magaya_toolkit.domain.errors import SessionError
 from magaya_toolkit.infrastructure.config import MagayaSettings
 from magaya_toolkit.infrastructure.soap.magaya_client import MagayaSoapClient
 from magaya_toolkit.resources import (
+    CatalogResource,
     EntitiesResource,
     InvoicesResource,
     ShipmentsResource,
@@ -52,6 +53,7 @@ class Magaya:
         self.shipments = ShipmentsResource(self)
         self.entities = EntitiesResource(self)
         self.invoices = InvoicesResource(self)
+        self.catalog = CatalogResource(self)
 
     # -- session lifecycle -------------------------------------------------
 

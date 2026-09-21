@@ -6,8 +6,10 @@ elements namespace-agnostically via `local-name()` XPath since responses are
 namespaced under `urn:CSSoapService`.
 
 Scope is strictly read-only: session management plus read methods — date-range
-transaction reads (`GetFirst`/`GetNextTransbyDate`), entity reads, and the
-single-transaction read (`GetTransaction`). No write/create operation lives here.
+transaction reads (`GetFirst`/`GetNextTransbyDate`), entity reads, the
+single-transaction read (`GetTransaction`), and the catalog/definition reads
+(currencies, chart of accounts, charges, events, ports). No write/create
+operation lives here.
 
 Implements the `MagayaReader` port.
 """
@@ -461,6 +463,97 @@ class MagayaSoapClient:
         self._check_return(root)
         # lxml auto-unescapes the HTML-escaped trans_list_xml when reading .text.
         return self._text(root, "trans_list_xml") or ""
+
+    # -- catalogs & definitions (session-scoped, single-call) --------------
+
+    def get_active_currencies(self, access_key: int) -> str:
+        """Return the raw `currency_list_xml` of all active currencies.
+
+        Single-call read (no pagination cookie). Assumes the caller already
+        holds a valid `access_key`.
+        """
+        return self._catalog_call("GetActiveCurrencies", "currency_list_xml", access_key)
+
+    def get_event_definitions(self, access_key: int) -> str:
+        """Return the raw `event_definition_list_xml` of all event definitions.
+
+        Single-call read (no pagination cookie). Assumes the caller already
+        holds a valid `access_key`.
+        """
+        return self._catalog_call(
+            "GetEventDefinitions", "event_definition_list_xml", access_key
+        )
+
+    def get_account_definitions(self, access_key: int) -> str:
+        """Return the raw `account_list_xml` of the full chart of accounts.
+
+        Single-call read (no pagination cookie). Assumes the caller already
+        holds a valid `access_key`.
+        """
+        return self._catalog_call("GetAccountDefinitions", "account_list_xml", access_key)
+
+    def get_charge_definitions(self, access_key: int) -> str:
+        """Return the raw charge (items & services) definition list.
+
+        Note the output field is `service_list_xml`, not `charge_list_xml` —
+        Magaya calls these "Items and Services". The response is large (a few MB
+        on a mature install). Single-call read (no pagination cookie). Assumes
+        the caller already holds a valid `access_key`.
+        """
+        return self._catalog_call("GetChargeDefinitions", "service_list_xml", access_key)
+
+    def get_client_charge_definitions(self, access_key: int, client_uuid: str) -> str:
+        """Return the raw `charge_list_xml` of one client's custom charges.
+
+        The parameter is `client_uuid`. The Magaya API reference names it
+        `customer_uuid`, but sending that name is rejected with
+        "SOAP Invalid Request" — verified against a live install.
+
+        `client_uuid` must belong to a Client entity; another entity type is
+        rejected with `unknown_object`. A client with no custom charges returns
+        an empty `<CustomChargeDefinitions>` document, not an error. Single-call
+        read (no pagination cookie). Assumes the caller already holds a valid
+        `access_key`.
+        """
+        body = (
+            f'<q1:GetClientChargeDefinitions xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<client_uuid xsi:type="xsd:string">{escape(client_uuid)}</client_uuid>'
+            "</q1:GetClientChargeDefinitions>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "charge_list_xml") or ""
+
+    def get_working_ports(self) -> str:
+        """Return the raw `ports_list_xml` of all working ports.
+
+        `GetWorkingPorts` takes NO parameters — not even `access_key`. Sending
+        one is rejected with "SOAP Invalid Request". The Magaya API reference
+        is wrong here on two counts (its signature block is a copy of `Invoke`,
+        and it names the output `port_list_xml`); both were corrected against a
+        live install. Single-call read (no pagination cookie).
+        """
+        body = f'<q1:GetWorkingPorts xmlns:q1="{_METHOD_NS}"></q1:GetWorkingPorts>'
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "ports_list_xml") or ""
+
+    def _catalog_call(self, method: str, out_field: str, access_key: int) -> str:
+        """Call a catalog read that takes only `access_key` and returns one XML field.
+
+        Five of the catalog methods share this exact shape; only the method name
+        and the output field differ.
+        """
+        body = (
+            f'<q1:{method} xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f"</q1:{method}>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        # lxml auto-unescapes the HTML-escaped payload when reading .text.
+        return self._text(root, out_field) or ""
 
     @classmethod
     def _more_results(cls, root: etree._Element) -> bool:

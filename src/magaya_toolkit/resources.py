@@ -15,10 +15,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from magaya_toolkit.application.use_cases import collect_shipments
+from magaya_toolkit.domain.catalog import (
+    AccountDefinition,
+    ChargeDefinition,
+    Currency,
+    EventDefinition,
+    Port,
+)
 from magaya_toolkit.domain.entity import Entity, EntityContact, EntityType
 from magaya_toolkit.domain.invoice import Invoice
 from magaya_toolkit.domain.shipment import Shipment
 from magaya_toolkit.domain.transaction import TransactionRef
+from magaya_toolkit.infrastructure.xml.catalog_parser import LxmlCatalogParser
 from magaya_toolkit.infrastructure.xml.entity_parser import LxmlEntityParser
 from magaya_toolkit.infrastructure.xml.invoice_parser import LxmlInvoiceParser
 from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
@@ -255,3 +263,89 @@ class InvoicesResource:
         return self._magaya.client.get_transaction_status(
             self._magaya.access_key, "IN", number
         )
+
+
+class CatalogResource:
+    """Read the install's reference data through the facade's managed session.
+
+    Catalogs are what give meaning to the codes other resources return: an
+    invoice's currency code, a charge line's code, a shipment's event name, a
+    port code. Every read here is a single call with no pagination.
+    """
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._parser = LxmlCatalogParser()
+
+    def currencies(self) -> list[Currency]:
+        """List the active currencies.
+
+        Exchange rates come back as `Decimal` at Magaya's full precision.
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        currency_list_xml = self._magaya.client.get_active_currencies(
+            self._magaya.access_key
+        )
+        return self._parser.parse_currencies(currency_list_xml)
+
+    def events(self) -> list[EventDefinition]:
+        """List the tracking-event definitions this install can stamp.
+
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        event_definition_list_xml = self._magaya.client.get_event_definitions(
+            self._magaya.access_key
+        )
+        return self._parser.parse_event_definitions(event_definition_list_xml)
+
+    def accounts(self) -> list[AccountDefinition]:
+        """List the chart of accounts.
+
+        Each account carries its currency and, when it has one, its full parent
+        account nested recursively. Reuses the facade's OPEN session; accessing
+        it before `Magaya.open()` raises `SessionError`.
+        """
+        account_list_xml = self._magaya.client.get_account_definitions(
+            self._magaya.access_key
+        )
+        return self._parser.parse_account_definitions(account_list_xml)
+
+    def charges(self) -> list[ChargeDefinition]:
+        """List the item/service (charge) definitions.
+
+        This is the catalog that turns an invoice line's opaque charge code into
+        a description and an account. The response is large on a mature install
+        (a few MB); read it once and keep it. Reuses the facade's OPEN session;
+        accessing it before `Magaya.open()` raises `SessionError`.
+        """
+        service_list_xml = self._magaya.client.get_charge_definitions(
+            self._magaya.access_key
+        )
+        return self._parser.parse_charge_definitions(service_list_xml)
+
+    def client_charges(self, client_guid: str) -> list[ChargeDefinition]:
+        """List one client's custom charge definitions, overriding the globals.
+
+        `client_guid` must be a Client entity's GUID; another entity type is
+        rejected with `unknown_object`. A client with no custom charges returns
+        an empty list, not an error. Reuses the facade's OPEN session; accessing
+        it before `Magaya.open()` raises `SessionError`.
+        """
+        charge_list_xml = self._magaya.client.get_client_charge_definitions(
+            self._magaya.access_key, client_guid
+        )
+        return self._parser.parse_custom_charge_definitions(charge_list_xml)
+
+    def ports(self) -> list[Port]:
+        """List the working ports defined in Magaya.
+
+        A port may serve several transport modes, so `Port.methods` is a list
+        (Air/Ocean/Ground/Mail) and may be empty.
+
+        Unlike every other read here, `GetWorkingPorts` takes no session key, so
+        this call works without an open session.
+        """
+        ports_list_xml = self._magaya.client.get_working_ports()
+        return self._parser.parse_ports(ports_list_xml)
