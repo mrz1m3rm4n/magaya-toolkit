@@ -18,6 +18,7 @@ from magaya_toolkit.infrastructure.soap.magaya_client import MagayaSoapClient
 from magaya_toolkit.resources import (
     CatalogResource,
     EntitiesResource,
+    FilesResource,
     InvoicesResource,
     RatesResource,
     ShipmentsResource,
@@ -56,6 +57,7 @@ class Magaya:
         self.invoices = InvoicesResource(self)
         self.catalog = CatalogResource(self)
         self.rates = RatesResource(self)
+        self.files = FilesResource(self)
 
     # -- session lifecycle -------------------------------------------------
 

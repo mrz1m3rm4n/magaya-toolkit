@@ -15,6 +15,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from magaya_toolkit.application.use_cases import collect_shipments
+from magaya_toolkit.domain.attachment import (
+    ATTACH_DOCS_SUMMARY,
+    Attachment,
+    AttachmentRef,
+    DocumentRef,
+    WebDocument,
+)
 from magaya_toolkit.domain.catalog import (
     AccountDefinition,
     ChargeDefinition,
@@ -27,6 +34,7 @@ from magaya_toolkit.domain.invoice import Invoice
 from magaya_toolkit.domain.rate import Rate
 from magaya_toolkit.domain.shipment import Shipment
 from magaya_toolkit.domain.transaction import TransactionRef
+from magaya_toolkit.infrastructure.xml.attachment_parser import LxmlAttachmentParser
 from magaya_toolkit.infrastructure.xml.catalog_parser import LxmlCatalogParser
 from magaya_toolkit.infrastructure.xml.entity_parser import LxmlEntityParser
 from magaya_toolkit.infrastructure.xml.invoice_parser import LxmlInvoiceParser
@@ -428,3 +436,88 @@ class RatesResource:
             self._magaya.access_key, carrier_guid, org_port, dest_port, method
         )
         return self._parser.parse(rate_list_xml)
+
+
+class FilesResource:
+    """Read the files attached to a transaction, through the managed session.
+
+    Magaya keeps two kinds, and they travel different roads:
+
+    - **Attachments** — files people attached. `attachments()` lists them,
+      `attachment()` fetches one.
+    - **Documents** — Magaya's own generated paperwork. `documents()` lists
+      them, `document()` renders one to PDF.
+
+    Both are deliberate two-step trips: a transaction read never carries file
+    content, so you list cheap pointers first and pay for bytes only for the
+    one you want. `AttachmentRef.size` is there to help you decide.
+    """
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._parser = LxmlAttachmentParser()
+
+    def attachments(
+        self, trans_type: str, number: str, *, flags: int = 0
+    ) -> list[AttachmentRef]:
+        """List the attachments on one transaction.
+
+        `number` is the transaction number or GUID (for shipments, the Bill of
+        Lading / Waybill number). A transaction with none returns []. Reuses the
+        facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`.
+        """
+        attach_list_xml = self._magaya.client.get_all_attachments(
+            self._magaya.access_key, trans_type, number, flags=flags
+        )
+        return self._parser.parse_list(attach_list_xml)
+
+    def attachment(self, ref: AttachmentRef) -> Attachment:
+        """Fetch one attachment's content, from a ref `attachments()` returned.
+
+        Returns the file with `data` already decoded from Base64. Check
+        `Attachment.size_matches` before writing it anywhere.
+
+        Needs no open session — `GetAttachment` takes no access key.
+        """
+        if not (ref.owner_type and ref.owner_guid and ref.identifier):
+            raise ValueError(
+                "AttachmentRef needs owner_type, owner_guid and identifier to be "
+                "fetched — use one returned by `attachments()`."
+            )
+        attach_xml = self._magaya.client.get_attachment(
+            ref.owner_type, ref.owner_guid, int(ref.identifier)
+        )
+        return self._parser.parse_one(attach_xml)
+
+    def documents(self, trans_type: str, number: str) -> list[DocumentRef]:
+        """List the Magaya-generated documents on one transaction.
+
+        Magaya lists documents inside the transaction itself, so this reads the
+        transaction with the `AttachDocsSummary` flag and collects them. Reuses
+        the facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`.
+        """
+        trans_xml = self._magaya.client.get_transaction(
+            self._magaya.access_key, trans_type, number, flags=ATTACH_DOCS_SUMMARY
+        )
+        return self._parser.parse_documents(trans_xml)
+
+    def document(self, ref: DocumentRef) -> WebDocument:
+        """Render one document to PDF, from a ref `documents()` returned.
+
+        The result is a PDF whatever `DocumentRef.extension` says Magaya stores
+        it as. Use `WebDocument.size` for the real byte count — the API's own
+        `encoded_length` measures the Base64 string, not the file.
+
+        Needs no open session — `GetWebDocument` takes no access key.
+        """
+        if not (ref.owner_guid and ref.identifier):
+            raise ValueError(
+                "DocumentRef needs owner_guid and identifier to be fetched — use "
+                "one returned by `documents()`."
+            )
+        document, length, is_ole = self._magaya.client.get_web_document(
+            ref.owner_guid, int(ref.identifier)
+        )
+        return self._parser.build_web_document(document, length, is_ole)

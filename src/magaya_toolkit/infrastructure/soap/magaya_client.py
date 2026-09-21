@@ -539,6 +539,85 @@ class MagayaSoapClient:
         self._check_return(root)
         return self._text(root, "ports_list_xml") or ""
 
+    # -- attachments & documents -------------------------------------------
+    #
+    # Only the listing call is session-scoped. `GetAttachment` and
+    # `GetWebDocument` take NO access_key at all — sending one is rejected with
+    # "SOAP Invalid Request" — and neither answers with a `<return>` status
+    # element, so there is nothing for `_check_return` to inspect.
+
+    def get_all_attachments(
+        self, access_key: int, trans_type: str, number: str, flags: int = 0
+    ) -> str:
+        """Return the raw `attach_list_xml` of a transaction's attachments.
+
+        `number` is the transaction number or GUID (for shipments, the Bill of
+        Lading / Waybill number). Attachment bytes are never included — this
+        lists what is there so `get_attachment` can fetch one.
+
+        The SOAP parameter order (`access_key`, `flags`, `type`, `number`) puts
+        `flags` BEFORE `type`, mirroring the Magaya API reference for
+        `GetAllAttachments`. Single-call read (no pagination cookie). Assumes
+        the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetAllAttachments xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetAllAttachments>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "attach_list_xml") or ""
+
+    def get_attachment(self, app: str, trans_uuid: str, attach_id: int) -> str:
+        """Return the raw `attach_xml` of one attachment, content included.
+
+        Takes NO `access_key`; sending one is rejected with "SOAP Invalid
+        Request". `app`, `trans_uuid` and `attach_id` are the `OwnerType`,
+        `OwnerGUID` and `Identifier` of an entry from `get_all_attachments`.
+
+        The Magaya API reference declares the output as an unnamed retval; the
+        response field is actually `attach_xml`. The file content arrives
+        Base64-encoded in its `<Data>` element.
+        """
+        body = (
+            f'<q1:GetAttachment xmlns:q1="{_METHOD_NS}">'
+            f'<app xsi:type="xsd:string">{escape(app)}</app>'
+            f'<trans_uuid xsi:type="xsd:string">{escape(trans_uuid)}</trans_uuid>'
+            f'<attach_id xsi:type="xsd:int">{int(attach_id)}</attach_id>'
+            "</q1:GetAttachment>"
+        )
+        root = self._call(body)
+        return self._text(root, "attach_xml") or ""
+
+    def get_web_document(self, trans_uuid: str, doc_id: int) -> tuple[str, str, str]:
+        """Return `(document_b64, document_length, is_ole_doc)` for one document.
+
+        Takes NO `access_key`. `doc_id` is a `<Document>`'s `Identifier`, which
+        a transaction only lists when read with the `AttachDocsSummary` flag
+        (0x40).
+
+        The document comes back rendered to PDF and Base64-encoded, whatever
+        format Magaya stores it in. Note `document_length` is the length of the
+        Base64 STRING, not of the decoded file — the API reference calls it
+        "Document size in bytes", which it is not.
+        """
+        body = (
+            f'<q1:GetWebDocument xmlns:q1="{_METHOD_NS}">'
+            f'<trans_uuid xsi:type="xsd:string">{escape(trans_uuid)}</trans_uuid>'
+            f'<doc_id xsi:type="xsd:int">{int(doc_id)}</doc_id>'
+            "</q1:GetWebDocument>"
+        )
+        root = self._call(body)
+        return (
+            self._text(root, "document") or "",
+            self._text(root, "document_length") or "",
+            self._text(root, "is_ole_doc") or "",
+        )
+
     # -- rates (session-scoped, single-call) -------------------------------
     #
     # The three rate reads share a lane filter: `org_port`, `dest_port` and
