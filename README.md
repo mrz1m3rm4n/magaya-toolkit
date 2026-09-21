@@ -97,8 +97,12 @@ do from Python via the facade.
 | Typed catalog read models + XML parser | ✅ working |
 | Read rates (standard / client / carrier) | ✅ working, validated live |
 | Typed `Rate` read model + XML parser | ✅ working |
+| Read attachments + documents (`GetAllAttachments`/`GetAttachment`/`GetWebDocument`) | ✅ working, validated live |
+| Typed attachment / document read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
-| Attachments, POD and inventory reads | ⏳ not yet — same pattern |
+| Proof of delivery (`GetPODData`) | ⏳ not yet — no POD data on hand to model against |
+| LiveTrack reads (`GetSecureTrackingTransaction`) | ⏳ not yet — needs LiveTrack client credentials |
+| Inventory reads (`GetItemFromVIN`, item definitions) | ⏳ not yet — same pattern |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
 
 ---
@@ -115,12 +119,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 23 |
-| 🟡 Read, pending | 13 |
+| ✅ Done | 26 |
+| 🟡 Read, pending | 10 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 21 / 34 read methods (~62%).**
+**Read coverage: 24 / 34 read methods (~71%).**
 
 ### Session
 | Method | Status |
@@ -169,8 +173,8 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 ### Attachments
 | Method | Status |
 | --- | --- |
-| GetAllAttachments | 🟡 |
-| GetAttachment | 🟡 |
+| GetAllAttachments | ✅ |
+| GetAttachment | ✅ |
 | SetAttachment | 🚫 |
 
 ### Transaction log
@@ -203,7 +207,7 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | GetItemFromVIN | 🟡 |
 | GetItemDefinitionsByCustomer | 🟡 |
 | GetInventoryItemsByItemDefinition | 🟡 |
-| GetWebDocument | 🟡 |
+| GetWebDocument | ✅ |
 | GetSecureTrackingTransaction | 🟡 |
 | GetPODData | 🟡 |
 | SetShipmentStatus | 🚫 |
