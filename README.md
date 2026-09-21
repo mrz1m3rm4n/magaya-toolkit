@@ -93,6 +93,8 @@ do from Python via the facade.
 | Existence & status probes (`ExistsTransaction`/`GetTransactionStatus`) | ✅ working, validated live |
 | Read entities + contacts (`GetEntities`/`GetEntitiesOfType`/`GetEntityContacts`) | ✅ working, validated live |
 | Typed `Entity` / `EntityContact` read models + XML parser | ✅ working |
+| Read catalogs (currencies, accounts, charges, events, ports) | ✅ working, validated live |
+| Typed catalog read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
 | Read other transaction types (invoices, rates…) | ⏳ not yet — same pattern |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
@@ -111,12 +113,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 14 |
-| 🟡 Read, pending | 22 |
+| ✅ Done | 20 |
+| 🟡 Read, pending | 16 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 12 / 34 read methods (~35%).**
+**Read coverage: 18 / 34 read methods (~53%).**
 
 ### Session
 | Method | Status |
@@ -190,12 +192,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 ### Miscellaneous
 | Method | Status |
 | --- | --- |
-| GetAccountDefinitions | 🟡 |
-| GetChargeDefinitions | 🟡 |
-| GetClientChargeDefinitions | 🟡 |
-| GetActiveCurrencies | 🟡 |
-| GetEventDefinitions | 🟡 |
-| GetWorkingPorts | 🟡 |
+| GetAccountDefinitions | ✅ |
+| GetChargeDefinitions | ✅ |
+| GetClientChargeDefinitions | ✅ |
+| GetActiveCurrencies | ✅ |
+| GetEventDefinitions | ✅ |
+| GetWorkingPorts | ✅ |
 | GetItemFromVIN | 🟡 |
 | GetItemDefinitionsByCustomer | 🟡 |
 | GetInventoryItemsByItemDefinition | 🟡 |
