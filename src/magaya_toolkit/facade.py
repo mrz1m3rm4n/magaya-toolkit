@@ -23,6 +23,7 @@ from magaya_toolkit.resources import (
     InvoicesResource,
     RatesResource,
     ShipmentsResource,
+    TrackingResource,
 )
 
 
@@ -60,6 +61,7 @@ class Magaya:
         self.rates = RatesResource(self)
         self.files = FilesResource(self)
         self.inventory = InventoryResource(self)
+        self.tracking = TrackingResource(self)
 
     # -- session lifecycle -------------------------------------------------
 

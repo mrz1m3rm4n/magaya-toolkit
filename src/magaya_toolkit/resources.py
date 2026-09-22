@@ -727,3 +727,48 @@ class InventoryResource:
         """
         item_xml = self._magaya.client.get_item_from_vin(self._magaya.access_key, vin)
         return self._parser.parse_one_item(item_xml)
+
+
+class TrackingResource:
+    """Read a transaction as one of your LiveTrack clients would see it.
+
+    This is the only resource that does NOT use the API session. It
+    authenticates with a LiveTrack CLIENT's own name and password — the
+    credentials your customer logs into the tracking portal with, not the API
+    user's — and Magaya returns only what that client is allowed to see.
+
+    Use it to answer "what does this customer actually see for this shipment?"
+    without trusting the answer to your own, wider, API permissions.
+
+    Because there is no session, these calls work outside a `with` block. The
+    password belongs to your client: take it from wherever you already hold it
+    and do not log it.
+    """
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._shipment_parser = LxmlShipmentParser()
+        self._invoice_parser = LxmlInvoiceParser()
+
+    def shipment(self, user: str, password: str, guid: str) -> Shipment:
+        """Read one shipment as the LiveTrack client `user` sees it.
+
+        `guid` is the shipment's GUID — unlike `Magaya.shipments.get`, this one
+        takes the GUID only. Raises `ApiError` (`access_denied`) when the
+        credentials are wrong or the client may not see that shipment.
+        """
+        trans_xml = self._magaya.client.get_secure_tracking_transaction(
+            user, password, "SH", guid
+        )
+        return self._shipment_parser.parse_one(trans_xml)
+
+    def invoice(self, user: str, password: str, guid: str) -> Invoice:
+        """Read one invoice as the LiveTrack client `user` sees it.
+
+        `guid` is the invoice's GUID. Raises `ApiError` (`access_denied`) when
+        the credentials are wrong or the client may not see that invoice.
+        """
+        trans_xml = self._magaya.client.get_secure_tracking_transaction(
+            user, password, "IN", guid
+        )
+        return self._invoice_parser.parse_one(trans_xml)

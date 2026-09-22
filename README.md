@@ -105,8 +105,8 @@ do from Python via the facade.
 | Server-side JavaScript filtering on the reads that accept it | ⚠️ implemented; no filter function defined in the install to validate a match |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
 | Vehicle lookup by VIN (`GetItemFromVIN`) | ⚠️ implemented; only the not-found path is validated (no vehicles on hand) |
+| LiveTrack client reads (`GetSecureTrackingTransaction`) | ⚠️ implemented; only the access-denied path is validated (no LiveTrack credentials) |
 | Proof of delivery (`GetPODData`) | ⏳ not yet — no POD data on hand to model against |
-| LiveTrack reads (`GetSecureTrackingTransaction`) | ⏳ not yet — needs LiveTrack client credentials |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
 
 ---

@@ -552,6 +552,38 @@ class MagayaSoapClient:
         self._check_return(root)
         return self._text(root, "ports_list_xml") or ""
 
+    # -- LiveTrack (no API session) ----------------------------------------
+
+    def get_secure_tracking_transaction(
+        self, user: str, password: str, app: str, number: str
+    ) -> str:
+        """Return the raw `trans_xml` of one transaction, read as a LiveTrack client.
+
+        This does NOT use the API session. It authenticates with a Magaya
+        LiveTrack CLIENT's own name and password — a different identity from the
+        API user — and returns only what that client is allowed to see through
+        LiveTrack. Passing an `access_key` is rejected with "SOAP Invalid
+        Request".
+
+        `number` is the transaction's GUID. Bad credentials come back as the
+        `access_denied` return code, which `_check_return` raises as `ApiError`;
+        that path is verified against a live install. The successful body could
+        not be — no LiveTrack client credentials were available — but the API
+        reference describes it as `GetTransaction` without flags, and the
+        response field is likewise `trans_xml`.
+        """
+        body = (
+            f'<q1:GetSecureTrackingTransaction xmlns:q1="{_METHOD_NS}">'
+            f'<user xsi:type="xsd:string">{escape(user)}</user>'
+            f'<pass xsi:type="xsd:string">{escape(password)}</pass>'
+            f'<app xsi:type="xsd:string">{escape(app)}</app>'
+            f'<number xsi:type="xsd:string">{escape(number)}</number>'
+            "</q1:GetSecureTrackingTransaction>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_xml") or ""
+
     # -- batch & server-side-filtered reads --------------------------------
     #
     # These answer with a batch root named after the transaction type —
