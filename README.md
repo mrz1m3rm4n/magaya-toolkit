@@ -50,9 +50,156 @@ one entity.
 (see [Configure](#configure)). Every resource call inside the same `with` block
 reuses the one open session. Read resources return typed models.
 
+### Catalogs — `magaya.catalog`
+
+The reference data your install is configured with. These turn codes that other
+resources hand back as opaque strings into something with meaning: an invoice's
+currency, a charge line's code, a shipment event's name, a port code.
+
+```python
+with Magaya() as magaya:
+    for c in magaya.catalog.currencies():
+        print(c.code, c.name, c.exchange_rate, c.is_home_currency)
+
+    charges = magaya.catalog.charges()          # items & services
+    by_code = {c.code: c.description for c in charges}
+
+    for p in magaya.catalog.ports():
+        # A port can serve several modes — or none.
+        print(f"{p.country_code}{p.code}", p.name, p.methods)
+```
+
+Also available: `accounts()` (the chart of accounts, with each account's parent
+nested), `events()` (the tracking events this install can stamp) and
+`client_charges(client_guid)` (one client's overrides).
+
+Exchange rates are `Decimal`, at Magaya's full precision — it sends rates like
+`0.05069297294009104254`, which `float` would quietly round.
+
+`charges()` is heavy on a mature install (a few MB); read it once and keep it.
+
+### Rates — `magaya.rates`
+
+```python
+with Magaya() as magaya:
+    rates = magaya.rates.standard(method="Ocean")
+    for r in rates:
+        print(r.origin_country_code, "->", r.destination_country_code, r.prices)
+
+    # A client's negotiated rates, plus the standard ones that apply to them:
+    magaya.rates.for_client(client_guid, include_standard=True)
+    magaya.rates.for_carrier(carrier_guid, org_port="MXZLO")
+```
+
+Ports in the lane filter use Magaya's `CountryCode + PortCode` form — `MXZLO` is
+Manzanillo, Mexico. Pair `Port.country_code` with `Port.code` from
+`catalog.ports()` to build one. A code that is not a working port raises
+`ApiError`, it does not quietly return nothing.
+
+Magaya prices a rate by `apply_by`: `Package`, `Weight`, `Volume`, `Pieces`,
+`Formula` or `Unknown`. Only `Package` pricing is parsed today, into
+`package_rates` — check `apply_by` before reading prices.
+
+### Attachments and documents — `magaya.files`
+
+Magaya keeps two kinds of file on a transaction and they travel different roads:
+**attachments** are what people attached, **documents** are Magaya's own
+generated paperwork. Neither ships inside a transaction read, so both are
+deliberate two-step trips — list cheap pointers, then pay for the bytes of the
+one you want.
+
+```python
+from pathlib import Path
+
+with Magaya() as magaya:
+    refs = magaya.files.attachments("IN", "F-78282")
+    for ref in refs:
+        print(ref.name, ref.extension, ref.size)   # decide before fetching
+
+    attachment = magaya.files.attachment(refs[0])
+    if attachment.size_matches:                    # catches a truncated transfer
+        Path(attachment.suggested_filename()).write_bytes(attachment.data)
+
+    docs = magaya.files.documents("SH", shipment_guid)
+    pdf = magaya.files.document(docs[0])
+    Path("bl.pdf").write_bytes(pdf.data)
+```
+
+`data` arrives already decoded from Base64. `document()` returns a PDF whatever
+`DocumentRef.extension` says Magaya stores it as. Use `WebDocument.size` for the
+real byte count — the API's own `encoded_length` measures the Base64 string, not
+the file.
+
+### Warehouse inventory — `magaya.inventory`
+
+Two levels: a definition is what a thing **is**, an item is where a piece of it
+**is**.
+
+```python
+with Magaya() as magaya:
+    definitions = magaya.inventory.definitions()
+    stocked = [d for d in definitions if d.pieces]      # skip the empty ones
+
+    for item in magaya.inventory.items(stocked[0].guid):
+        print(item.serial_number, item.status, item.location.code, item.moved)
+```
+
+`definitions()` with no customer returns the definitions belonging to no
+customer, which on a stocked install is most of them and a heavy response.
+`ItemDefinition.pieces` is how you tell which ones are worth calling `items()`
+for.
+
+### Batch reads and server-side filtering
+
+`shipments.list` paginates and is what you normally want. `range()` reads a whole
+date range in one unpaginated call — heavier by design, and a single day of
+shipments can exceed the client timeout.
+
+What makes the batch practical is `js_function`: the name of a boolean
+JavaScript function you have defined in Magaya under **Configuration →
+JavaScript Code**. Magaya evaluates it per transaction and only the matches
+cross the network.
+
+```python
+with Magaya() as magaya:
+    invoices = magaya.invoices.range("2026-07-01", "2026-07-02")
+
+    # Filtered server-side; arguments go in the order the function declares them:
+    magaya.shipments.list("2026-07-01", "2026-07-31",
+                          js_function="GetTransactionByStatus",
+                          js_params=["Loaded"])
+
+    magaya.invoices.for_billing_client(client_guid, "2026-07-01", "2026-08-01")
+```
+
+`js_function` is available on `shipments.list`, `shipments.range`,
+`invoices.range` and `invoices.query`. An unknown function name raises
+`ApiError`. Note these are **not** JSON variants — `JS` is JavaScript.
+
+### LiveTrack — `magaya.tracking`
+
+The one resource that does not use the API session. It authenticates with a
+LiveTrack **client's** own name and password — what your customer logs into the
+tracking portal with — so it answers "what does this customer actually see?"
+without trusting the answer to your wider API permissions.
+
+```python
+magaya = Magaya()          # no `with` needed: there is no session to open
+shipment = magaya.tracking.shipment(client_user, client_password, shipment_guid)
+magaya.close()
+```
+
+Wrong credentials, or a transaction that client may not see, raise `ApiError`.
+
+### Exports
+
 The public API is exported from the package root: `Magaya`, `MagayaSettings`,
-`Shipment`, `Entity`, `EntityContact`, `EntityType`, `Measure`, `Address`, and
-the errors `MagayaError`, `ApiError`, `XmlValidationError`, `SessionError`.
+the read models (`Shipment`, `Invoice`, `Entity`, `EntityContact`, `Currency`,
+`AccountDefinition`, `ChargeDefinition`, `EventDefinition`, `Port`, `Rate`,
+`Package`, `Attachment`, `AttachmentRef`, `DocumentRef`, `WebDocument`,
+`ItemDefinition`, `InventoryItem`, `WarehouseLocation`, `TransactionRef`,
+`Measure`, `Address`), the `EntityType` codes, the `ATTACH_DOCS_SUMMARY` flag,
+and the errors `MagayaError`, `ApiError`, `XmlValidationError`, `SessionError`.
 
 ---
 
