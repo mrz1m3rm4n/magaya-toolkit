@@ -227,6 +227,34 @@ do from Python via the facade.
   `employee`, `salesman`, or `division`; omit it for all entities. (`customer`
   is accepted as an alias of `client` — see the library note above.)
 
+- **Read the catalogs** — currencies, chart of accounts, charges, events, ports:
+  ```bash
+  magaya catalog currencies
+  magaya catalog ports --json
+  magaya catalog accounts
+  magaya catalog events
+  magaya catalog charges                    # the global item/service list
+  magaya catalog charges --client <GUID>    # one client's overrides
+  ```
+  `catalog ports` prints the port as the `CountryCode+PortCode` token the rate
+  filters expect (`MXZLO`), so its first column pastes straight into a rate
+  query.
+
+- **Read rates** — standard, per client, per carrier:
+  ```bash
+  magaya rates standard --method Ocean
+  magaya rates standard --origin MXZLO --destination USLAX
+  magaya rates client <GUID> --include-standard
+  magaya rates carrier <GUID> --origin MXZLO
+  ```
+  `--origin` / `--destination` take the `CountryCode+PortCode` form. A code that
+  is not a working port exits non-zero with Magaya's `invalid_operation` rather
+  than quietly returning nothing.
+
+Every command takes `--json` and prints a JSON array instead of the table, so
+output pipes straight into `jq`. Decimals are serialized as strings, which is
+what keeps an exchange rate's twenty significant digits intact.
+
 ## Status
 
 | Capability | Status |

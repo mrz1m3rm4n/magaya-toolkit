@@ -1,12 +1,18 @@
 """Command-line entry point.
 
-Read-only capabilities that work end to end today: listing shipments for a date
-range and listing entities.
+Read-only. Every command takes `--json` and prints a JSON array instead of the
+tab-separated table, so output pipes straight into `jq`.
 
     magaya shipments --from 2025-01-01 --to 2025-01-31
-    magaya shipments --from 2025-01-01 --to 2025-01-31 --max 100 --json
-    magaya entities
     magaya entities MUE --type client --json
+
+    magaya catalog currencies
+    magaya catalog ports --json
+    magaya catalog charges --client <GUID>
+
+    magaya rates standard --method Ocean
+    magaya rates client <GUID> --include-standard
+    magaya rates carrier <GUID> --origin MXZLO
 """
 
 from __future__ import annotations
@@ -36,10 +42,40 @@ _ENTITY_TYPES = {
 
 app = typer.Typer(help="Read data from the Magaya API.")
 
+catalog_app = typer.Typer(help="Read the reference data this install is configured with.")
+rates_app = typer.Typer(help="Read freight rates.")
+app.add_typer(catalog_app, name="catalog")
+app.add_typer(rates_app, name="rates")
+
 
 @app.callback()
 def main() -> None:
-    """Magaya toolkit CLI. Run a subcommand (e.g. `shipments` or `entities`)."""
+    """Magaya toolkit CLI. Run a subcommand (e.g. `shipments` or `catalog`)."""
+
+
+def _read(read):
+    """Run `read(magaya)` in a managed session, reporting `ApiError` cleanly."""
+    settings = MagayaSettings()
+    try:
+        with Magaya(settings) as magaya:
+            return read(magaya)
+    except ApiError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+
+def _emit(results, noun: str, row, as_json: bool) -> None:
+    """Print `results` as JSON or as one tab-separated line each, then a count."""
+    if as_json:
+        typer.echo(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
+        return
+    for result in results:
+        typer.echo(row(result))
+    typer.echo(f"{len(results)} {noun}.")
+
+
+def _json_option() -> bool:
+    return typer.Option(False, "--json", help="Emit a JSON array instead of a table.")
 
 
 def _eta(shipment) -> str:
@@ -141,6 +177,174 @@ def entities(
             f"{entity.phone or '-'}"
         )
     typer.echo(f"{len(results)} entity(ies).")
+
+
+# -- catalog ---------------------------------------------------------------
+
+
+@catalog_app.command("currencies")
+def catalog_currencies(as_json: bool = _json_option()) -> None:
+    """List the active currencies and their exchange rates."""
+    results = _read(lambda m: m.catalog.currencies())
+    _emit(
+        results,
+        "currency(ies)",
+        lambda c: (
+            f"{c.code or '-'}\t"
+            f"{c.name or '-'}\t"
+            f"{c.exchange_rate if c.exchange_rate is not None else '-'}\t"
+            f"{'home' if c.is_home_currency else ''}"
+        ),
+        as_json,
+    )
+
+
+@catalog_app.command("accounts")
+def catalog_accounts(as_json: bool = _json_option()) -> None:
+    """List the chart of accounts."""
+    results = _read(lambda m: m.catalog.accounts())
+    _emit(
+        results,
+        "account(s)",
+        lambda a: (
+            f"{a.number or '-'}\t"
+            f"{a.type or '-'}\t"
+            f"{a.name or '-'}\t"
+            f"{a.currency.code if a.currency else '-'}\t"
+            f"parent={a.parent_account.number if a.parent_account else '-'}"
+        ),
+        as_json,
+    )
+
+
+@catalog_app.command("charges")
+def catalog_charges(
+    client: str | None = typer.Option(
+        None, "--client", help="Read one client's custom charges instead of the global list."
+    ),
+    as_json: bool = _json_option(),
+) -> None:
+    """List the item/service (charge) definitions."""
+    if client is None:
+        results = _read(lambda m: m.catalog.charges())
+    else:
+        results = _read(lambda m: m.catalog.client_charges(client))
+    _emit(
+        results,
+        "charge(s)",
+        lambda c: (
+            f"{c.code or '-'}\t"
+            f"{c.type or '-'}\t"
+            f"{c.description or '-'}\t"
+            f"{c.account_definition.name if c.account_definition else '-'}"
+        ),
+        as_json,
+    )
+
+
+@catalog_app.command("events")
+def catalog_events(as_json: bool = _json_option()) -> None:
+    """List the tracking-event definitions this install can stamp."""
+    results = _read(lambda m: m.catalog.events())
+    _emit(
+        results,
+        "event(s)",
+        lambda e: f"{e.name or '-'}\t{'tracked' if e.include_in_tracking else ''}",
+        as_json,
+    )
+
+
+@catalog_app.command("ports")
+def catalog_ports(as_json: bool = _json_option()) -> None:
+    """List the working ports.
+
+    The first column is the CountryCode+PortCode form the rate filters expect.
+    """
+    results = _read(lambda m: m.catalog.ports())
+    _emit(
+        results,
+        "port(s)",
+        lambda p: (
+            f"{(p.country_code or '')}{p.code or ''}\t"
+            f"{p.name or '-'}\t"
+            f"{p.country or '-'}\t"
+            f"{','.join(p.methods) or '-'}"
+        ),
+        as_json,
+    )
+
+
+# -- rates -----------------------------------------------------------------
+
+
+def _rate_row(rate) -> str:
+    lane = f"{rate.origin_country_code or '?'}->{rate.destination_country_code or '?'}"
+    modes = ",".join(rate.applicable_modes.methods) if rate.applicable_modes else ""
+    prices = ",".join(str(p) for p in rate.prices) or "-"
+    charge = rate.charge_definition.code if rate.charge_definition else "-"
+    return (
+        f"{rate.type or '-'}\t"
+        f"{lane}\t"
+        f"{modes or '-'}\t"
+        f"{charge}\t"
+        f"{rate.apply_by or '-'}\t"
+        f"{prices} {rate.currency.code if rate.currency else ''}".rstrip()
+    )
+
+
+@rates_app.command("standard")
+def rates_standard(
+    origin: str = typer.Option("", "--origin", help="Origin port, CountryCode+PortCode."),
+    destination: str = typer.Option("", "--destination", help="Destination port."),
+    method: str = typer.Option("", "--method", help="Air, Ocean or Ground."),
+    as_json: bool = _json_option(),
+) -> None:
+    """List the standard (house) rates."""
+    results = _read(
+        lambda m: m.rates.standard(org_port=origin, dest_port=destination, method=method)
+    )
+    _emit(results, "rate(s)", _rate_row, as_json)
+
+
+@rates_app.command("client")
+def rates_client(
+    guid: str = typer.Argument(..., help="Client GUID."),
+    origin: str = typer.Option("", "--origin", help="Origin port, CountryCode+PortCode."),
+    destination: str = typer.Option("", "--destination", help="Destination port."),
+    method: str = typer.Option("", "--method", help="Air, Ocean or Ground."),
+    include_standard: bool = typer.Option(
+        False, "--include-standard", help="Also return the standard rates that apply."
+    ),
+    as_json: bool = _json_option(),
+) -> None:
+    """List one client's negotiated rates."""
+    results = _read(
+        lambda m: m.rates.for_client(
+            guid,
+            org_port=origin,
+            dest_port=destination,
+            method=method,
+            include_standard=include_standard,
+        )
+    )
+    _emit(results, "rate(s)", _rate_row, as_json)
+
+
+@rates_app.command("carrier")
+def rates_carrier(
+    guid: str = typer.Argument(..., help="Carrier GUID."),
+    origin: str = typer.Option("", "--origin", help="Origin port, CountryCode+PortCode."),
+    destination: str = typer.Option("", "--destination", help="Destination port."),
+    method: str = typer.Option("", "--method", help="Air, Ocean or Ground."),
+    as_json: bool = _json_option(),
+) -> None:
+    """List one carrier's rates."""
+    results = _read(
+        lambda m: m.rates.for_carrier(
+            guid, org_port=origin, dest_port=destination, method=method
+        )
+    )
+    _emit(results, "rate(s)", _rate_row, as_json)
 
 
 if __name__ == "__main__":
