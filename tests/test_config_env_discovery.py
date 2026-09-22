@@ -20,12 +20,10 @@ from magaya_toolkit.infrastructure.config import (
     user_config_dir,
 )
 
-_ENV_BODY = "\n".join(
-    [
-        "MAGAYA_API_URL=https://example.test/api",
-        "MAGAYA_USERNAME=someone",
-        "MAGAYA_PASSWORD=secret",
-    ]
+_ENV_BODY = (
+    "MAGAYA_API_URL=https://example.test/api\n"
+    "MAGAYA_USERNAME=someone\n"
+    "MAGAYA_PASSWORD=secret\n"
 )
 
 
