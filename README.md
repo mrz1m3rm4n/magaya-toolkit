@@ -475,6 +475,21 @@ MAGAYA_USERNAME=<your-api-username>
 MAGAYA_PASSWORD=<your-api-password>
 ```
 
+**Where `.env` is looked for.** Not just the current directory — the CLI is
+meant to run from wherever you happen to be. It is searched the way `git` looks
+for a repository, first hit winning:
+
+1. `MAGAYA_ENV_FILE`, if set. An explicit path stops the search, so a typo fails
+   loudly instead of quietly loading a different file.
+2. `.env` in the current directory, then each parent up to `/`. This is what
+   makes `magaya` work from any subdirectory of your project.
+3. `.env` under `$XDG_CONFIG_HOME/magaya-toolkit` (or
+   `~/.config/magaya-toolkit`) — put it there to use the CLI from anywhere.
+
+Real environment variables always win over the file, so
+`MAGAYA_API_URL=… magaya shipments …` overrides a `.env` without editing it. When
+nothing is found, the CLI says which paths it tried.
+
 - For **Magaya cloud** installs, the endpoint is
   `https://<COMPANY_ID>.magayacloud.com/api/Invoke?Handler=CSSoapService`.
 - For **on-premise** installs, it is usually

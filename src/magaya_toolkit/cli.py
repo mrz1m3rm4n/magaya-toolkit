@@ -21,11 +21,15 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
 from magaya_toolkit.domain.entity import EntityType
 from magaya_toolkit.domain.errors import ApiError
 from magaya_toolkit.facade import Magaya
-from magaya_toolkit.infrastructure.config import MagayaSettings
+from magaya_toolkit.infrastructure.config import (
+    MagayaSettings,
+    candidate_env_files,
+)
 
 # Map the CLI `--type` choices to the domain `EntityType` codes. `None` (the
 # option's default) means "all entities" (no type filter).
@@ -62,9 +66,39 @@ def main() -> None:
     """Magaya toolkit CLI. Run a subcommand (e.g. `shipments` or `catalog`)."""
 
 
+def _settings() -> MagayaSettings:
+    """Load settings, explaining where `.env` was looked for when they are missing."""
+    try:
+        return MagayaSettings()
+    except ValidationError as exc:
+        missing = sorted(
+            str(error["loc"][0]) for error in exc.errors() if error["type"] == "missing"
+        )
+        typer.secho(
+            "ERROR: missing Magaya connection settings: "
+            + ", ".join(f"MAGAYA_{name.upper()}" for name in missing),
+            fg=typer.colors.RED,
+            err=True,
+        )
+        # The walk up to the filesystem root can be long; show the near ones and
+        # the user-level file, which are the two places anyone actually puts it.
+        searched = [str(path) for path in candidate_env_files()]
+        # Keep the nearest directories and the user-level file; elide the middle
+        # of a long walk rather than printing every parent up to "/".
+        shown = searched if len(searched) <= 4 else searched[:2] + ["..."] + searched[-2:]
+        typer.secho(
+            "Set them in the environment, or put a .env in one of:\n  "
+            + "\n  ".join(shown)
+            + "\nMAGAYA_ENV_FILE=/path/to/.env overrides the search.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+
 def _read(read):
     """Run `read(magaya)` in a managed session, reporting `ApiError` cleanly."""
-    settings = MagayaSettings()
+    settings = _settings()
     try:
         with Magaya(settings) as magaya:
             return read(magaya)
@@ -107,7 +141,7 @@ def shipments(
     ),
 ) -> None:
     """List shipments from Magaya for a date range (read-only)."""
-    settings = MagayaSettings()
+    settings = _settings()
     try:
         with Magaya(settings) as magaya:
             results = magaya.shipments.list(
@@ -164,7 +198,7 @@ def entities(
         raise typer.Exit(code=1)
     selected_type = _ENTITY_TYPES[entity_type] if entity_type is not None else None
 
-    settings = MagayaSettings()
+    settings = _settings()
     try:
         with Magaya(settings) as magaya:
             results = magaya.entities.find(start_with, entity_type=selected_type)
