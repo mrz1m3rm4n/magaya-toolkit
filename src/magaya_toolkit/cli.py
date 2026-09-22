@@ -18,6 +18,7 @@ tab-separated table, so output pipes straight into `jq`.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import typer
 
@@ -44,8 +45,16 @@ app = typer.Typer(help="Read data from the Magaya API.")
 
 catalog_app = typer.Typer(help="Read the reference data this install is configured with.")
 rates_app = typer.Typer(help="Read freight rates.")
+invoices_app = typer.Typer(help="Read invoices.")
+files_app = typer.Typer(help="Read the files attached to a transaction.")
+inventory_app = typer.Typer(help="Read warehouse inventory.")
+tracking_app = typer.Typer(help="Read a transaction as one of your LiveTrack clients.")
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(rates_app, name="rates")
+app.add_typer(invoices_app, name="invoices")
+app.add_typer(files_app, name="files")
+app.add_typer(inventory_app, name="inventory")
+app.add_typer(tracking_app, name="tracking")
 
 
 @app.callback()
@@ -345,6 +354,305 @@ def rates_carrier(
         )
     )
     _emit(results, "rate(s)", _rate_row, as_json)
+
+
+# -- invoices --------------------------------------------------------------
+
+
+@invoices_app.command("query")
+def invoices_query(
+    from_date: str = typer.Option(..., "--from", help="Start (yyyy-MM-ddTHH:mm:ss)."),
+    to_date: str = typer.Option(..., "--to", help="End (yyyy-MM-ddTHH:mm:ss)."),
+    log_entry_type: int = typer.Option(
+        1, "--log-type", help="Log bitmask: 1 Creation, 2 Deletion, 4 Edition, -1 any."
+    ),
+    as_json: bool = _json_option(),
+) -> None:
+    """List invoice references from the transaction log. Keep the window narrow."""
+    results = _read(
+        lambda m: m.invoices.query(from_date, to_date, log_entry_type=log_entry_type)
+    )
+    _emit(
+        results,
+        "invoice ref(s)",
+        lambda r: f"{r.guid}\t{r.type or '-'}\t{r.log_type or '-'}\t{r.log_date or '-'}",
+        as_json,
+    )
+
+
+@invoices_app.command("get")
+def invoices_get(
+    number: str = typer.Argument(..., help="Invoice number or GUID."),
+    as_json: bool = _json_option(),
+) -> None:
+    """Fetch one invoice by number or GUID."""
+    invoice = _read(lambda m: m.invoices.get(number))
+    _emit([invoice], "invoice(s)", _invoice_row, as_json)
+
+
+@invoices_app.command("range")
+def invoices_range(
+    from_date: str = typer.Option(..., "--from", help="Start date (yyyy-MM-dd)."),
+    to_date: str = typer.Option(..., "--to", help="End date (yyyy-MM-dd)."),
+    js_function: str = typer.Option(
+        "", "--js-function", help="Name of a JavaScript filter defined in Magaya."
+    ),
+    js_param: list[str] = typer.Option(
+        [], "--js-param", help="Filter argument, repeatable, in declaration order."
+    ),
+    as_json: bool = _json_option(),
+) -> None:
+    """Read a whole date range of full invoices in one call.
+
+    Heavy: a single day can run to tens of megabytes. Use --js-function to make
+    Magaya filter before anything crosses the network.
+    """
+    results = _read(
+        lambda m: m.invoices.range(
+            from_date, to_date, js_function=js_function, js_params=js_param
+        )
+    )
+    _emit(results, "invoice(s)", _invoice_row, as_json)
+
+
+def _invoice_row(invoice) -> str:
+    return (
+        f"{invoice.number or '-'}\t"
+        f"{invoice.status or '-'}\t"
+        f"{invoice.total_amount if invoice.total_amount is not None else '-'}\t"
+        f"{invoice.currency or '-'}\t"
+        f"{invoice.entity_name or '-'}"
+    )
+
+
+# -- files -----------------------------------------------------------------
+
+
+@files_app.command("attachments")
+def files_attachments(
+    trans_type: str = typer.Argument(..., help="Transaction type, e.g. IN or SH."),
+    number: str = typer.Argument(..., help="Transaction number or GUID."),
+    as_json: bool = _json_option(),
+) -> None:
+    """List the attachments on one transaction."""
+    results = _read(lambda m: m.files.attachments(trans_type, number))
+    _emit(
+        results,
+        "attachment(s)",
+        lambda a: (
+            f"{a.identifier or '-'}\t"
+            f"{a.name or '-'}.{a.extension or '-'}\t"
+            f"{a.size if a.size is not None else '-'}\t"
+            f"{'image' if a.is_image else ''}"
+        ),
+        as_json,
+    )
+
+
+@files_app.command("get-attachment")
+def files_get_attachment(
+    trans_type: str = typer.Argument(..., help="Transaction type, e.g. IN or SH."),
+    number: str = typer.Argument(..., help="Transaction number or GUID."),
+    identifier: str = typer.Argument(..., help="Attachment identifier, from `attachments`."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Where to write the file."),
+) -> None:
+    """Download one attachment to disk."""
+
+    def read(magaya):
+        refs = magaya.files.attachments(trans_type, number)
+        match = next((r for r in refs if r.identifier == identifier), None)
+        if match is None:
+            available = ", ".join(r.identifier or "?" for r in refs) or "none"
+            typer.secho(
+                f"ERROR: no attachment {identifier!r} on {trans_type} {number}. "
+                f"Available: {available}.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        return magaya.files.attachment(match), match
+
+    attachment, ref = _read(read)
+    _write_file(attachment.data, out or Path(attachment.suggested_filename()))
+    if attachment.size_matches is False:
+        typer.secho(
+            f"WARNING: Magaya reported {ref.size} bytes but {len(attachment.data or b'')} "
+            "arrived — the transfer looks truncated.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
+@files_app.command("documents")
+def files_documents(
+    trans_type: str = typer.Argument(..., help="Transaction type, e.g. SH."),
+    number: str = typer.Argument(..., help="Transaction number or GUID."),
+    as_json: bool = _json_option(),
+) -> None:
+    """List the Magaya-generated documents on one transaction."""
+    results = _read(lambda m: m.files.documents(trans_type, number))
+    _emit(
+        results,
+        "document(s)",
+        lambda d: (
+            f"{d.identifier or '-'}\t"
+            f"{d.name or '-'}\t"
+            f"stored as .{d.extension or '?'}\t"
+            f"{'magaya' if d.is_magaya_doc else ''}"
+        ),
+        as_json,
+    )
+
+
+@files_app.command("get-document")
+def files_get_document(
+    trans_type: str = typer.Argument(..., help="Transaction type, e.g. SH."),
+    number: str = typer.Argument(..., help="Transaction number or GUID."),
+    identifier: str = typer.Argument(..., help="Document identifier, from `documents`."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Where to write the PDF."),
+) -> None:
+    """Download one document, rendered to PDF."""
+
+    def read(magaya):
+        docs = magaya.files.documents(trans_type, number)
+        match = next((d for d in docs if d.identifier == identifier), None)
+        if match is None:
+            available = ", ".join(d.identifier or "?" for d in docs) or "none"
+            typer.secho(
+                f"ERROR: no document {identifier!r} on {trans_type} {number}. "
+                f"Available: {available}.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        return magaya.files.document(match), match
+
+    document, ref = _read(read)
+    # Magaya renders every document to PDF, whatever it stores it as.
+    _write_file(document.data, out or Path(f"{ref.name or ref.identifier}.pdf"))
+
+
+def _write_file(data: bytes | None, path: Path) -> None:
+    """Write downloaded bytes, refusing to pretend an empty response is a file."""
+    if not data:
+        typer.secho("ERROR: Magaya returned no content.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    path.write_bytes(data)
+    typer.echo(f"{path} ({len(data)} bytes)")
+
+
+# -- inventory -------------------------------------------------------------
+
+
+@inventory_app.command("definitions")
+def inventory_definitions(
+    client: str = typer.Option("", "--client", help="Scope to one customer's definitions."),
+    stocked: bool = typer.Option(
+        False, "--stocked", help="Only the definitions that actually hold pieces."
+    ),
+    as_json: bool = _json_option(),
+) -> None:
+    """List item definitions. Without --client this is a large response."""
+    results = _read(lambda m: m.inventory.definitions(client))
+    if stocked:
+        results = [d for d in results if d.pieces]
+    _emit(
+        results,
+        "definition(s)",
+        lambda d: (
+            f"{d.part_number or '-'}\t"
+            f"{d.description or '-'}\t"
+            f"{d.pieces if d.pieces is not None else '-'}\t"
+            f"{d.item_type or '-'}\t"
+            f"{d.guid or '-'}"
+        ),
+        as_json,
+    )
+
+
+@inventory_app.command("items")
+def inventory_items(
+    definition_guid: str = typer.Argument(..., help="Item definition GUID."),
+    as_json: bool = _json_option(),
+) -> None:
+    """List the physical pieces on hand for one item definition."""
+    results = _read(lambda m: m.inventory.items(definition_guid))
+    _emit(
+        results,
+        "item(s)",
+        lambda i: (
+            f"{i.serial_number or '-'}\t"
+            f"{i.status or '-'}\t"
+            f"{i.location.code if i.location else '-'}\t"
+            f"{'moved' if i.moved else ''}\t"
+            f"{i.warehouse_receipt_number or '-'}"
+        ),
+        as_json,
+    )
+
+
+@inventory_app.command("vin")
+def inventory_vin(
+    vin: str = typer.Argument(..., help="Vehicle VIN."),
+    as_json: bool = _json_option(),
+) -> None:
+    """Look one vehicle up by VIN."""
+    item = _read(lambda m: m.inventory.item_from_vin(vin))
+    _emit(
+        [item],
+        "item(s)",
+        lambda i: f"{i.serial_number or '-'}\t{i.description or '-'}\t{i.status or '-'}",
+        as_json,
+    )
+
+
+# -- tracking --------------------------------------------------------------
+
+
+def _livetrack_password() -> str:
+    """Prompt for the client's password rather than take it as an argument.
+
+    A password passed on the command line lands in shell history and in the
+    process list. This one belongs to your customer, so it is prompted for, or
+    read from MAGAYA_LIVETRACK_PASSWORD when a script needs it.
+    """
+    return typer.Option(
+        ...,
+        "--password",
+        prompt="LiveTrack client password",
+        hide_input=True,
+        envvar="MAGAYA_LIVETRACK_PASSWORD",
+        help="Prompted for if omitted; also read from MAGAYA_LIVETRACK_PASSWORD.",
+    )
+
+
+@tracking_app.command("shipment")
+def tracking_shipment(
+    user: str = typer.Argument(..., help="LiveTrack client name."),
+    guid: str = typer.Argument(..., help="Shipment GUID."),
+    password: str = _livetrack_password(),
+    as_json: bool = _json_option(),
+) -> None:
+    """Read one shipment as that LiveTrack client sees it."""
+    shipment = _read(lambda m: m.tracking.shipment(user, password, guid))
+    _emit(
+        [shipment],
+        "shipment(s)",
+        lambda s: f"{s.number}\t{s.mode}\t{s.status or '-'}\tETA={_eta(s)}",
+        as_json,
+    )
+
+
+@tracking_app.command("invoice")
+def tracking_invoice(
+    user: str = typer.Argument(..., help="LiveTrack client name."),
+    guid: str = typer.Argument(..., help="Invoice GUID."),
+    password: str = _livetrack_password(),
+    as_json: bool = _json_option(),
+) -> None:
+    """Read one invoice as that LiveTrack client sees it."""
+    invoice = _read(lambda m: m.tracking.invoice(user, password, guid))
+    _emit([invoice], "invoice(s)", _invoice_row, as_json)
 
 
 if __name__ == "__main__":

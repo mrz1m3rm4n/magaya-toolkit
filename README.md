@@ -251,6 +251,51 @@ do from Python via the facade.
   is not a working port exits non-zero with Magaya's `invalid_operation` rather
   than quietly returning nothing.
 
+- **Read invoices** — log references, one invoice, or a whole range:
+  ```bash
+  magaya invoices query --from 2026-07-01T00:00:00 --to 2026-07-02T00:00:00
+  magaya invoices get F-78394
+  magaya invoices range --from 2026-07-01 --to 2026-07-02
+  magaya invoices range --from 2026-07-01 --to 2026-07-31 \
+      --js-function byDivision --js-param "DIV 1"
+  ```
+  `range` reads full invoices unpaginated and a single day can run to tens of
+  megabytes; `--js-function` names a JavaScript filter defined in Magaya so the
+  filtering happens before anything crosses the network. Repeat `--js-param`
+  once per argument, in the order the function declares them.
+
+- **Download attachments and documents**:
+  ```bash
+  magaya files attachments IN F-78282          # identifier is the first column
+  magaya files get-attachment IN F-78282 144402385 -o invoice.xml
+
+  magaya files documents SH <SHIPMENT_GUID>
+  magaya files get-document SH <SHIPMENT_GUID> 144517945 -o bl.pdf
+  ```
+  An identifier that is not on that transaction exits non-zero and lists the
+  ones that are. Documents always come back as PDF, whatever Magaya stores them
+  as. If the bytes that arrive do not match the size Magaya reported, the
+  download is still written but a warning says so.
+
+- **Read warehouse inventory**:
+  ```bash
+  magaya inventory definitions --stocked      # skip the ones holding nothing
+  magaya inventory items <DEFINITION_GUID>
+  magaya inventory vin 1HGCM82633A004352
+  ```
+  `definitions` prints the GUID last, which is what `items` takes.
+
+- **Read as one of your LiveTrack clients**:
+  ```bash
+  magaya tracking shipment acme-client <SHIPMENT_GUID>
+  magaya tracking invoice acme-client <INVOICE_GUID>
+  ```
+  Answers "what does this customer actually see?" using their own portal
+  credentials rather than your API user's wider permissions. The password is
+  **prompted for**, never passed as an argument — a password in `argv` lands in
+  shell history and in the process list. Scripts can set
+  `MAGAYA_LIVETRACK_PASSWORD` instead.
+
 Every command takes `--json` and prints a JSON array instead of the table, so
 output pipes straight into `jq`. Decimals are serialized as strings, which is
 what keeps an exchange rate's twenty significant digits intact.

@@ -34,6 +34,11 @@ packages = ["src/magaya_toolkit"]
 line-length = 100
 src = ["src", "tests"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer declares CLI options as argument defaults; that is its API, not the
+# mutable-default bug B008 looks for.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
