@@ -101,6 +101,8 @@ do from Python via the facade.
 | Typed attachment / document read models + XML parser | ✅ working |
 | Read warehouse inventory (item definitions + items on hand) | ✅ working, validated live |
 | Typed `ItemDefinition` / `InventoryItem` read models + XML parser | ✅ working |
+| Unpaginated batch reads (`GetTransRangeByDate`, by billing client) | ✅ working, validated live |
+| Server-side JavaScript filtering on the reads that accept it | ⚠️ implemented; no filter function defined in the install to validate a match |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
 | Vehicle lookup by VIN (`GetItemFromVIN`) | ⚠️ implemented; only the not-found path is validated (no vehicles on hand) |
 | Proof of delivery (`GetPODData`) | ⏳ not yet — no POD data on hand to model against |
@@ -121,12 +123,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 28 |
-| 🟡 Read, pending | 8 |
+| ✅ Done | 30 |
+| 🟡 Read, pending | 6 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 26 / 34 read methods (~76%).**
+**Read coverage: 28 / 34 read methods (~82%).**
 
 ### Session
 | Method | Status |
@@ -140,12 +142,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | GetFirstTransbyDate | ✅ |
 | GetNextTransbyDate | ✅ |
 | GetTransaction | ✅ |
-| GetTransRangeByDate | 🟡 |
+| GetTransRangeByDate | ✅ |
 | GetTransRangeByDateJS | 🟡 |
 | GetFirstTransbyDateJS | 🟡 |
 | ExistsTransaction | ✅ |
 | GetTransactionStatus | ✅ |
-| GetTransactionsByBillingClient | 🟡 |
+| GetTransactionsByBillingClient | ✅ |
 | GetRelatedTransactions | ✅ |
 | GetAccountingTransactions | ✅ |
 | GetEntityTransactions | ✅ |
