@@ -13,6 +13,7 @@ hold the facade, build the parser it needs, and expose typed read methods.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from xml.sax.saxutils import escape
 
 from magaya_toolkit.application.use_cases import collect_shipments
 from magaya_toolkit.domain.attachment import (
@@ -45,7 +46,22 @@ from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
 from magaya_toolkit.infrastructure.xml.transaction_parser import LxmlGuidItemsParser
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from magaya_toolkit.facade import Magaya
+
+
+def _js_parameters(values: Sequence[str] | None) -> str:
+    """Build the `<Parameters>` document a Magaya JavaScript filter expects.
+
+    Magaya passes arguments to a server-side predicate as XML, positionally, in
+    the order the function declares them. Callers pass a plain sequence and
+    never see the markup.
+    """
+    if not values:
+        return ""
+    inner = "".join(f"<Parameter>{escape(str(v))}</Parameter>" for v in values)
+    return f"<Parameters>{inner}</Parameters>"
 
 
 class ShipmentsResource:
@@ -65,8 +81,17 @@ class ShipmentsResource:
         record_quantity: int = 5,
         backwards: bool = False,
         max_results: int | None = None,
+        js_function: str = "",
+        js_params: Sequence[str] | None = None,
     ) -> list[Shipment]:
         """List shipments in a date range, deduplicated and optionally capped.
+
+        Pass `js_function` to have Magaya filter SERVER-SIDE with a JavaScript
+        predicate already defined under Configuration → JavaScript Code, and
+        `js_params` with its arguments in declaration order. Only the matching
+        transactions cross the network, which on a wide range is the difference
+        between a quick read and a timeout. An unknown function name raises
+        `ApiError`.
 
         Reuses the facade's OPEN session; accessing it before `Magaya.open()`
         (e.g. calling this outside a `with` block) raises `SessionError`.
@@ -79,6 +104,8 @@ class ShipmentsResource:
             end_date,
             record_quantity,
             backwards,
+            js_function=js_function,
+            js_params=_js_parameters(js_params),
         )
         return collect_shipments(chunks, self._parser, max_results)
 
@@ -131,6 +158,44 @@ class ShipmentsResource:
         return self._magaya.client.get_transaction_status(
             self._magaya.access_key, "SH", number
         )
+
+    def range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        flags: int = 0,
+        js_function: str = "",
+        js_params: Sequence[str] | None = None,
+    ) -> list[Shipment]:
+        """Read a whole date range of shipments in ONE unpaginated call.
+
+        Heavy by design: Magaya builds the entire batch before answering, and a
+        single day of shipments can exceed the client's timeout. Prefer `list`,
+        which paginates. This exists for the cases where you genuinely want the
+        batch in one piece — and `js_function` is what makes it practical, since
+        the filtering happens server-side before anything crosses the network.
+
+        Dates use `yyyy-MM-dd` and match the date ON the shipment, not the date
+        it was created in Magaya. Reuses the facade's OPEN session; accessing it
+        before `Magaya.open()` raises `SessionError`.
+        """
+        client = self._magaya.client
+        if js_function:
+            trans_list_xml = client.get_trans_range_by_date_js(
+                self._magaya.access_key,
+                "SH",
+                start_date,
+                end_date,
+                js_function,
+                _js_parameters(js_params),
+                flags=flags,
+            )
+        else:
+            trans_list_xml = client.get_trans_range_by_date(
+                self._magaya.access_key, "SH", start_date, end_date, flags=flags
+            )
+        return self._parser.parse(trans_list_xml)
 
 
 class EntitiesResource:
@@ -207,25 +272,47 @@ class InvoicesResource:
         *,
         log_entry_type: int = 1,
         flags: int = 0,
+        js_function: str = "",
+        js_params: Sequence[str] | None = None,
     ) -> list[TransactionRef]:
         """List invoice references logged in a date range via `QueryLog`.
 
         Returns lightweight `TransactionRef` pointers; fetch the full invoice for
         each with `get`. Dates use the `yyyy-MM-ddTHH:mm:ss` format; keep the
         window narrow (wide ranges time out). `log_entry_type` is a bitmask of
-        log operations to include and defaults to 1 (Creation).
+        log operations to include and defaults to 1 (Creation); pass -1 to
+        ignore the log type entirely.
+
+        Pass `js_function` to have Magaya filter SERVER-SIDE with a JavaScript
+        predicate defined under Configuration → JavaScript Code, and `js_params`
+        with its arguments in declaration order. An unknown function name — or
+        one that does not return a boolean — raises `ApiError`
+        (`invalid_operation`).
 
         Reuses the facade's OPEN session; accessing it before `Magaya.open()`
         raises `SessionError`.
         """
-        trans_list_xml = self._magaya.client.query_log(
-            self._magaya.access_key,
-            start_date,
-            end_date,
-            log_entry_type,
-            "IN",
-            flags,
-        )
+        client = self._magaya.client
+        if js_function:
+            trans_list_xml = client.query_log_js(
+                self._magaya.access_key,
+                start_date,
+                end_date,
+                log_entry_type,
+                "IN",
+                js_function,
+                _js_parameters(js_params),
+                xml_flags=flags,
+            )
+        else:
+            trans_list_xml = client.query_log(
+                self._magaya.access_key,
+                start_date,
+                end_date,
+                log_entry_type,
+                "IN",
+                flags,
+            )
         return self._log_parser.parse(trans_list_xml)
 
     def get(self, number: str, *, flags: int = 0) -> Invoice:
@@ -275,6 +362,66 @@ class InvoicesResource:
         return self._magaya.client.get_transaction_status(
             self._magaya.access_key, "IN", number
         )
+
+    def range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        flags: int = 0,
+        js_function: str = "",
+        js_params: Sequence[str] | None = None,
+    ) -> list[Invoice]:
+        """Read a whole date range of invoices in ONE unpaginated call.
+
+        Returns full `Invoice` records, not the lightweight refs `query`
+        returns. It is heavy — one day of invoices runs to tens of megabytes —
+        so pass `js_function` to filter server-side when you can.
+
+        Dates use `yyyy-MM-dd` and match the date ON the invoice, not the date
+        it was created in Magaya; `query` is the one that reads the change log.
+        Reuses the facade's OPEN session; accessing it before `Magaya.open()`
+        raises `SessionError`.
+        """
+        client = self._magaya.client
+        if js_function:
+            trans_list_xml = client.get_trans_range_by_date_js(
+                self._magaya.access_key,
+                "IN",
+                start_date,
+                end_date,
+                js_function,
+                _js_parameters(js_params),
+                flags=flags,
+            )
+        else:
+            trans_list_xml = client.get_trans_range_by_date(
+                self._magaya.access_key, "IN", start_date, end_date, flags=flags
+            )
+        return self._invoice_parser.parse_list(trans_list_xml)
+
+    def for_billing_client(
+        self,
+        client_guid: str,
+        start_date: str,
+        end_date: str,
+        *,
+        flags: int = 0,
+    ) -> list[Invoice]:
+        """List the invoices billed TO one client in a date range.
+
+        The billing client is who the invoice is billed to, which is not the
+        same as the entity named on it — an install that does not set one gets
+        an empty list back rather than an error.
+
+        Dates use `yyyy-MM-dd` and match the date on the invoice. Reuses the
+        facade's OPEN session; accessing it before `Magaya.open()` raises
+        `SessionError`.
+        """
+        trans_list_xml = self._magaya.client.get_transactions_by_billing_client(
+            self._magaya.access_key, client_guid, "IN", start_date, end_date, flags=flags
+        )
+        return self._invoice_parser.parse_list(trans_list_xml)
 
 
 class CatalogResource:

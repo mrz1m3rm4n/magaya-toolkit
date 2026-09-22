@@ -30,6 +30,15 @@ from magaya_toolkit.domain.invoice import Invoice
 # Expected root local-name for a single-transaction invoice read.
 _ROOT_LOCAL_NAME = "Invoice"
 
+# Root of a batch read. Magaya names a batch root after the transaction type:
+# <Invoices>, <Shipments>, <WarehouseReceipts>, <CargoReleases>, …
+_LIST_ROOT_LOCAL_NAME = "Invoices"
+
+# Batch reads are big — a single day of invoices runs to tens of megabytes — so
+# the batch parser lifts lxml's default size ceilings. The bytes come from our
+# own Magaya server; entity resolution and network access stay off.
+_LIST_PARSER = etree.XMLParser(huge_tree=True, resolve_entities=False, no_network=True)
+
 
 def _local_name(element: etree._Element) -> str:
     """Return the tag local-name (namespace stripped)."""
@@ -64,6 +73,37 @@ class LxmlInvoiceParser:
                 f"Expected an <{_ROOT_LOCAL_NAME}> root, got <{_local_name(root)}>.",
             )
         return self._to_invoice(root)
+
+    def parse_list(self, trans_list_xml: str | bytes) -> list[Invoice]:
+        """Parse an `<Invoices>` batch into `Invoice` objects.
+
+        This is the shape the batch reads answer with — `GetTransRangeByDate`
+        and `GetTransactionsByBillingClient` with `type="IN"`. An empty
+        `<Invoices>` returns []. Raises `XmlValidationError` on malformed XML or
+        a root that is not `<Invoices>`.
+        """
+        raw = (
+            trans_list_xml.encode("utf-8")
+            if isinstance(trans_list_xml, str)
+            else trans_list_xml
+        )
+        try:
+            root = etree.fromstring(raw, parser=_LIST_PARSER)
+        except etree.XMLSyntaxError as exc:
+            raise XmlValidationError(
+                f"The <{_LIST_ROOT_LOCAL_NAME}> document is not well-formed XML.",
+                problems=[str(exc)],
+            ) from exc
+
+        if _local_name(root) != _LIST_ROOT_LOCAL_NAME:
+            raise XmlValidationError(
+                f"Expected an <{_LIST_ROOT_LOCAL_NAME}> root, got <{_local_name(root)}>.",
+            )
+        return [
+            self._to_invoice(element)
+            for element in root
+            if isinstance(element.tag, str)
+        ]
 
     # -- element -> domain -------------------------------------------------
 

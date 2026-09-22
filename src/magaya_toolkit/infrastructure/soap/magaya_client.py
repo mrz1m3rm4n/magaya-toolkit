@@ -37,6 +37,19 @@ _NO_ERROR = "no_error"
 
 _CONTENT_TYPE = "text/xml"
 
+# Magaya returns a whole result set HTML-escaped inside ONE text node, and lxml
+# refuses text nodes over ~10 MB by default ("Text node too long, try
+# XML_PARSE_HUGE"). A single day of invoices via GetTransRangeByDate is already
+# 13 MB, so responses of any size must be parseable. The input is our own
+# server's reply over HTTPS, not untrusted third-party XML; entity expansion
+# stays off (`resolve_entities=False`, `no_network=True`), so lifting the size
+# ceiling does not open the billion-laughs door.
+_RESPONSE_PARSER = etree.XMLParser(
+    huge_tree=True,
+    resolve_entities=False,
+    no_network=True,
+)
+
 
 def _envelope(body_inner: str) -> str:
     """Wrap a method-call fragment in the SOAP 1.1 envelope Magaya expects."""
@@ -111,7 +124,7 @@ class MagayaSoapClient:
         )
         response.raise_for_status()
 
-        root = etree.fromstring(response.content)
+        root = etree.fromstring(response.content, parser=_RESPONSE_PARSER)
 
         fault = root.xpath("//*[local-name()='faultstring']")
         if fault:
@@ -539,6 +552,193 @@ class MagayaSoapClient:
         self._check_return(root)
         return self._text(root, "ports_list_xml") or ""
 
+    # -- batch & server-side-filtered reads --------------------------------
+    #
+    # These answer with a batch root named after the transaction type —
+    # <Invoices>, <Shipments>, <WarehouseReceipts>, <CargoReleases> — holding
+    # FULL transactions, not references. They are heavy: one day of invoices is
+    # ~30 MB, and one day of shipments can exceed the client timeout. Prefer
+    # `iter_transactions_by_date` unless you genuinely need the whole batch.
+    #
+    # The `*JS` variants are NOT JSON. They filter SERVER-SIDE with a JavaScript
+    # predicate that must already be defined in Magaya under
+    # Configuration → JavaScript Code; `js_function` is its name and `js_params`
+    # an XML `<Parameters>` document. Magaya keeps only the transactions the
+    # function returns true for, which is what saves the network traffic.
+    # Pass flag 0x08000000 when the predicate does not read transaction XML —
+    # Magaya then skips building it, and the difference is large.
+
+    def get_trans_range_by_date(
+        self,
+        access_key: int,
+        trans_type: str,
+        start_date: str,
+        end_date: str,
+        flags: int = 0,
+    ) -> str:
+        """Return the raw `trans_list_xml` for a whole date range, unpaginated.
+
+        Dates use `yyyy-MM-dd` and are matched against the date ON the
+        transaction, not the date it was created in Magaya — use `query_log`
+        for the latter. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetTransRangeByDate xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            "</q1:GetTransRangeByDate>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_list_xml") or ""
+
+    def get_transactions_by_billing_client(
+        self,
+        access_key: int,
+        customer_uuid: str,
+        trans_type: str,
+        start_date: str,
+        end_date: str,
+        flags: int = 0,
+    ) -> str:
+        """Return the raw `trans_list_xml` of transactions billed to one client.
+
+        The billing client is the party a transaction is billed TO, which is not
+        the same as the entity named on it — an install that does not set one
+        returns an empty batch. Dates use `yyyy-MM-dd` and match the date on the
+        transaction. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetTransactionsByBillingClient xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<customer_uuid xsi:type="xsd:string">{escape(customer_uuid)}</customer_uuid>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            "</q1:GetTransactionsByBillingClient>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_list_xml") or ""
+
+    def get_trans_range_by_date_js(
+        self,
+        access_key: int,
+        trans_type: str,
+        start_date: str,
+        end_date: str,
+        js_function: str,
+        js_params: str = "",
+        flags: int = 0,
+    ) -> str:
+        """Return a whole date range, filtered server-side by a JS predicate.
+
+        `js_function` must name a boolean function defined in Magaya; an unknown
+        name comes back as `invalid_operation`, which `_check_return` raises as
+        `ApiError`. Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetTransRangeByDateJS xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<function xsi:type="xsd:string">{escape(js_function)}</function>'
+            f'<xml_params xsi:type="xsd:string">{escape(js_params)}</xml_params>'
+            "</q1:GetTransRangeByDateJS>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_list_xml") or ""
+
+    def get_first_trans_by_date_js(
+        self,
+        access_key: int,
+        trans_type: str,
+        start_date: str,
+        end_date: str,
+        record_quantity: int,
+        js_function: str,
+        js_params: str = "",
+        backwards_order: bool = False,
+        flags: int = 0,
+    ) -> tuple[str, bool]:
+        """Start a server-side-filtered date-range query. Returns `(cookie, more)`.
+
+        The cookie carries the JavaScript function and its parameters, so
+        iteration continues through the ORDINARY `get_next_trans_by_date` —
+        there is no `GetNextTransbyDateJS`.
+
+        `backwards_order` MUST be sent as `xsd:int` (0/1) even though the API
+        reference declares it `BOOL`; `xsd:boolean` is rejected with "SOAP
+        Invalid Request", exactly as on `GetFirstTransbyDate`.
+
+        Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetFirstTransbyDateJS xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<type xsi:type="xsd:string">{escape(trans_type)}</type>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            f'<record_quantity xsi:type="xsd:int">{int(record_quantity)}</record_quantity>'
+            f'<backwards_order xsi:type="xsd:int">{1 if backwards_order else 0}</backwards_order>'
+            f'<function xsi:type="xsd:string">{escape(js_function)}</function>'
+            f'<xml_params xsi:type="xsd:string">{escape(js_params)}</xml_params>'
+            "</q1:GetFirstTransbyDateJS>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        cookie = self._text(root, "cookie") or ""
+        return cookie, self._more_results(root)
+
+    def query_log_js(
+        self,
+        access_key: int,
+        start_date: str,
+        end_date: str,
+        log_entry_type: int,
+        trans_type: str,
+        js_function: str,
+        js_params: str = "",
+        log_flags: int = 0,
+        xml_flags: int = 0,
+    ) -> str:
+        """Query the transaction log with a server-side JavaScript filter.
+
+        The API reference's signature block is a copy of `QueryLog`'s and omits
+        `trans_type`; the parameter list and the reference's own sample envelope
+        both include it, and the live API accepts the sample's order
+        (`access_key`, `start_date`, `end_date`, `log_entry_type`, `trans_type`,
+        `function`, `xml_params`, `log_flags`, `xml_flags`).
+
+        `log_entry_type` is a bitmask (Creation=0x01, Deletion=0x02,
+        Edition=0x04, Cleanup=0x08); pass -1 to ignore the log type entirely.
+        Assumes the caller already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:QueryLogJS xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<start_date xsi:type="xsd:string">{escape(start_date)}</start_date>'
+            f'<end_date xsi:type="xsd:string">{escape(end_date)}</end_date>'
+            f'<log_entry_type xsi:type="xsd:int">{int(log_entry_type)}</log_entry_type>'
+            f'<trans_type xsi:type="xsd:string">{escape(trans_type)}</trans_type>'
+            f'<function xsi:type="xsd:string">{escape(js_function)}</function>'
+            f'<xml_params xsi:type="xsd:string">{escape(js_params)}</xml_params>'
+            f'<log_flags xsi:type="xsd:int">{int(log_flags)}</log_flags>'
+            f'<xml_flags xsi:type="xsd:int">{int(xml_flags)}</xml_flags>'
+            "</q1:QueryLogJS>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "trans_list_xml") or ""
+
     # -- inventory (session-scoped, single-call) ---------------------------
 
     def get_item_definitions_by_customer(
@@ -818,6 +1018,8 @@ class MagayaSoapClient:
         record_quantity: int = 5,
         backwards_order: bool = False,
         flags: int = 0,
+        js_function: str = "",
+        js_params: str = "",
     ) -> Iterator[str]:
         """Yield each `trans_list_xml` batch for a date range within an OPEN session.
 
@@ -828,16 +1030,32 @@ class MagayaSoapClient:
         session-managed convenience variant.
         """
         # GetFirst returns the cookie to feed the first GetNext. It carries
-        # no transaction XML itself.
-        cookie, more_results = self.get_first_trans_by_date(
-            access_key=access_key,
-            trans_type=trans_type,
-            start_date=start_date,
-            end_date=end_date,
-            record_quantity=record_quantity,
-            backwards_order=backwards_order,
-            flags=flags,
-        )
+        # no transaction XML itself. With a `js_function`, the JS variant is
+        # used instead — it returns the same kind of cookie, one that also
+        # carries the predicate, so iteration continues through the ordinary
+        # GetNext either way.
+        if js_function:
+            cookie, more_results = self.get_first_trans_by_date_js(
+                access_key=access_key,
+                trans_type=trans_type,
+                start_date=start_date,
+                end_date=end_date,
+                record_quantity=record_quantity,
+                js_function=js_function,
+                js_params=js_params,
+                backwards_order=backwards_order,
+                flags=flags,
+            )
+        else:
+            cookie, more_results = self.get_first_trans_by_date(
+                access_key=access_key,
+                trans_type=trans_type,
+                start_date=start_date,
+                end_date=end_date,
+                record_quantity=record_quantity,
+                backwards_order=backwards_order,
+                flags=flags,
+            )
         while more_results:
             # Thread the updated cookie back in; reusing the GetFirst cookie
             # would loop over the same page forever.
