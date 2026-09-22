@@ -99,10 +99,12 @@ do from Python via the facade.
 | Typed `Rate` read model + XML parser | ✅ working |
 | Read attachments + documents (`GetAllAttachments`/`GetAttachment`/`GetWebDocument`) | ✅ working, validated live |
 | Typed attachment / document read models + XML parser | ✅ working |
+| Read warehouse inventory (item definitions + items on hand) | ✅ working, validated live |
+| Typed `ItemDefinition` / `InventoryItem` read models + XML parser | ✅ working |
 | CLI (`magaya shipments`, `magaya entities`) | ✅ working |
+| Vehicle lookup by VIN (`GetItemFromVIN`) | ⚠️ implemented; only the not-found path is validated (no vehicles on hand) |
 | Proof of delivery (`GetPODData`) | ⏳ not yet — no POD data on hand to model against |
 | LiveTrack reads (`GetSecureTrackingTransaction`) | ⏳ not yet — needs LiveTrack client credentials |
-| Inventory reads (`GetItemFromVIN`, item definitions) | ⏳ not yet — same pattern |
 | **Create / update** transactions (`SetTransaction`) | 🚫 out of scope for now |
 
 ---
@@ -119,12 +121,12 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | Metric | Count |
 | --- | --- |
 | Total API methods | 59 |
-| ✅ Done | 26 |
-| 🟡 Read, pending | 10 |
+| ✅ Done | 28 |
+| 🟡 Read, pending | 8 |
 | 🚫 Write (out of scope) | 22 |
 | 🔧 Generic (`Invoke`) | 1 |
 
-**Read coverage: 24 / 34 read methods (~71%).**
+**Read coverage: 26 / 34 read methods (~76%).**
 
 ### Session
 | Method | Status |
@@ -205,8 +207,8 @@ Legend: ✅ done · 🟡 read, pending · 🚫 write, out of scope · 🔧 gener
 | GetEventDefinitions | ✅ |
 | GetWorkingPorts | ✅ |
 | GetItemFromVIN | 🟡 |
-| GetItemDefinitionsByCustomer | 🟡 |
-| GetInventoryItemsByItemDefinition | 🟡 |
+| GetItemDefinitionsByCustomer | ✅ |
+| GetInventoryItemsByItemDefinition | ✅ |
 | GetWebDocument | ✅ |
 | GetSecureTrackingTransaction | 🟡 |
 | GetPODData | 🟡 |
