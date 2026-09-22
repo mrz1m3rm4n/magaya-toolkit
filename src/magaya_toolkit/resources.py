@@ -30,6 +30,7 @@ from magaya_toolkit.domain.catalog import (
     Port,
 )
 from magaya_toolkit.domain.entity import Entity, EntityContact, EntityType
+from magaya_toolkit.domain.inventory import InventoryItem, ItemDefinition
 from magaya_toolkit.domain.invoice import Invoice
 from magaya_toolkit.domain.rate import Rate
 from magaya_toolkit.domain.shipment import Shipment
@@ -37,6 +38,7 @@ from magaya_toolkit.domain.transaction import TransactionRef
 from magaya_toolkit.infrastructure.xml.attachment_parser import LxmlAttachmentParser
 from magaya_toolkit.infrastructure.xml.catalog_parser import LxmlCatalogParser
 from magaya_toolkit.infrastructure.xml.entity_parser import LxmlEntityParser
+from magaya_toolkit.infrastructure.xml.inventory_parser import LxmlInventoryParser
 from magaya_toolkit.infrastructure.xml.invoice_parser import LxmlInvoiceParser
 from magaya_toolkit.infrastructure.xml.rate_parser import LxmlRateParser
 from magaya_toolkit.infrastructure.xml.shipment_parser import LxmlShipmentParser
@@ -521,3 +523,60 @@ class FilesResource:
             ref.owner_guid, int(ref.identifier)
         )
         return self._parser.build_web_document(document, length, is_ole)
+
+
+class InventoryResource:
+    """Read warehouse inventory through the facade's managed session.
+
+    Two levels, read in that order: `definitions()` lists what kinds of thing
+    exist, `items()` lists the physical pieces of one kind and where each sits.
+    """
+
+    def __init__(self, magaya: Magaya) -> None:
+        self._magaya = magaya
+        self._parser = LxmlInventoryParser()
+
+    def definitions(
+        self, customer_guid: str = "", *, flags: int = 0
+    ) -> list[ItemDefinition]:
+        """List item definitions, optionally scoped to one customer.
+
+        With no `customer_guid` this returns the definitions that belong to no
+        customer — on a stocked install that is most of them, and a heavy
+        response, so read it once and keep it.
+
+        `ItemDefinition.pieces` tells you which definitions actually hold stock
+        before you call `items()` for each. Reuses the facade's OPEN session;
+        accessing it before `Magaya.open()` raises `SessionError`.
+        """
+        def_list_xml = self._magaya.client.get_item_definitions_by_customer(
+            self._magaya.access_key, customer_guid, flags=flags
+        )
+        return self._parser.parse_definitions(def_list_xml)
+
+    def items(self, definition_guid: str, *, flags: int = 0) -> list[InventoryItem]:
+        """List the physical pieces on hand for one item definition.
+
+        Pass a kit's GUID to get the inventory of its bill of materials
+        instead. A definition with no stock returns []. Reuses the facade's OPEN
+        session; accessing it before `Magaya.open()` raises `SessionError`.
+        """
+        item_list_xml = self._magaya.client.get_inventory_items_by_item_definition(
+            self._magaya.access_key, definition_guid, flags=flags
+        )
+        return self._parser.parse_items(item_list_xml)
+
+    def item_from_vin(self, vin: str) -> InventoryItem:
+        """Look up one vehicle by its VIN.
+
+        Raises `ApiError` (`transaction_not_found`) when no vehicle carries that
+        VIN — that path is verified against a live install.
+
+        The SUCCESS path is not: the install this was built against holds no
+        vehicles, so the shape of a found vehicle is inferred from how the rest
+        of the API answers single-record reads. If it turns out to differ you
+        get an `XmlValidationError` naming what actually arrived, not silently
+        wrong data. Reuses the facade's OPEN session.
+        """
+        item_xml = self._magaya.client.get_item_from_vin(self._magaya.access_key, vin)
+        return self._parser.parse_one_item(item_xml)

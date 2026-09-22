@@ -539,6 +539,75 @@ class MagayaSoapClient:
         self._check_return(root)
         return self._text(root, "ports_list_xml") or ""
 
+    # -- inventory (session-scoped, single-call) ---------------------------
+
+    def get_item_definitions_by_customer(
+        self, access_key: int, customer_uuid: str = "", flags: int = 0
+    ) -> str:
+        """Return the raw `def_list_xml` of a customer's item definitions.
+
+        The parameter is `customer_uuid` — note that the sibling method
+        `GetClientChargeDefinitions` names the same idea `client_uuid` and
+        rejects `customer_uuid`. Magaya is inconsistent here; both were verified
+        against a live install.
+
+        An empty `customer_uuid` returns the item definitions that belong to no
+        customer, which on a stocked install is the bulk of them and a large
+        response. Single-call read (no pagination cookie). Assumes the caller
+        already holds a valid `access_key`.
+        """
+        body = (
+            f'<q1:GetItemDefinitionsByCustomer xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<customer_uuid xsi:type="xsd:string">{escape(customer_uuid)}</customer_uuid>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            "</q1:GetItemDefinitionsByCustomer>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "def_list_xml") or ""
+
+    def get_inventory_items_by_item_definition(
+        self, access_key: int, uuid: str, flags: int = 0
+    ) -> str:
+        """Return the raw `item_list_xml` of the stock for one item definition.
+
+        `uuid` is an item definition's GUID; passing a kit's GUID returns the
+        inventory of its bill of materials. A definition with no stock returns
+        an empty `<Items>` document, not an error. Single-call read (no
+        pagination cookie). Assumes the caller already holds a valid
+        `access_key`.
+        """
+        body = (
+            f'<q1:GetInventoryItemsByItemDefinition xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<uuid xsi:type="xsd:string">{escape(uuid)}</uuid>'
+            f'<flags xsi:type="xsd:int">{int(flags)}</flags>'
+            "</q1:GetInventoryItemsByItemDefinition>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "item_list_xml") or ""
+
+    def get_item_from_vin(self, access_key: int, vin: str) -> str:
+        """Return the raw `item_xml` for the vehicle with this VIN.
+
+        An unknown VIN comes back as the `transaction_not_found` return code,
+        which `_check_return` raises as `ApiError`. That path is verified; the
+        successful response could not be — the install this was developed
+        against holds no vehicles at all. Assumes the caller already holds a
+        valid `access_key`.
+        """
+        body = (
+            f'<q1:GetItemFromVIN xmlns:q1="{_METHOD_NS}">'
+            f'<access_key xsi:type="xsd:int">{int(access_key)}</access_key>'
+            f'<vin xsi:type="xsd:string">{escape(vin)}</vin>'
+            "</q1:GetItemFromVIN>"
+        )
+        root = self._call(body)
+        self._check_return(root)
+        return self._text(root, "item_xml") or ""
+
     # -- attachments & documents -------------------------------------------
     #
     # Only the listing call is session-scoped. `GetAttachment` and

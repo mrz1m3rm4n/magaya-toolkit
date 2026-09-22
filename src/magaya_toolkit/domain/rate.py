@@ -20,7 +20,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from magaya_toolkit.domain.catalog import ChargeDefinition, Currency
-from magaya_toolkit.domain.common import Measure
+from magaya_toolkit.domain.common import Measure, Package
 
 
 class PartyRef(BaseModel):
@@ -56,17 +56,6 @@ class ApplicableModes(BaseModel):
     all_methods_included: bool | None = None
     methods: list[str] = []
     modes: list[ModeOfTransportation] = []
-
-
-class Package(BaseModel):
-    """A package/container type a package-based rate is priced against."""
-
-    type: str | None = None
-    code: str | None = None
-    name: str | None = None
-    container_code: str | None = None
-    container_equip_type: str | None = None
-    methods: list[str] = []
 
 
 class PackageRate(BaseModel):

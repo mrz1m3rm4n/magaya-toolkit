@@ -41,3 +41,19 @@ class Address(BaseModel):
     contact_name: str | None = None
     contact_phone: str | None = None
     contact_email: str | None = None
+
+
+class Package(BaseModel):
+    """A package or container type, as Magaya defines it once and reuses.
+
+    The same `<Package>` element describes what a rate is priced against and
+    what an inventory item is stored in, so the model is shared. Container
+    fields are only filled for container types.
+    """
+
+    type: str | None = None
+    code: str | None = None
+    name: str | None = None
+    container_code: str | None = None
+    container_equip_type: str | None = None
+    methods: list[str] = []
