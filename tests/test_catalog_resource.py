@@ -343,4 +343,4 @@ def test_catalog_reads_reuse_one_session():
 
     methods = [_method(b) for b in bodies]
     assert methods.count("StartSession") == 1
-    assert methods.count("EndSession") == 1
+    assert methods.count("EndSession") == 0

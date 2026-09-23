@@ -24,9 +24,13 @@ Connection config lives in `.env` (gitignored): `MAGAYA_API_URL`,
 - Transport: SOAP 1.1 over HTTPS `POST`, `Content-Type: text/xml`, method
   namespace `urn:CSSoapService`, no WSDL, no `SOAPAction`. Cloud endpoint shape:
   `https://<COMPANY_ID>.magayacloud.com/api/Invoke?Handler=CSSoapService`.
-- Session: `StartSession(user, pass) -> int access_key`; always `EndSession`. The
-  facade owns ONE session per `with Magaya(...)` block — reuse it, never reopen
-  per call.
+- Session: `StartSession(user, pass) -> int access_key`. The `access_key` is a
+  **constant of the credential** — Magaya returns the same key every time, so a
+  second `StartSession` revalidates it rather than replacing it. `EndSession`
+  kills that key for every process sharing the credential (e.g. a production
+  ETL), not just the caller — so the SDK does NOT send it by default; it is
+  opt-in (`end_session_on_close=True`). The facade owns ONE session per
+  `with Magaya(...)` block — reuse it, never reopen per call.
 - Date-range reads: `GetFirstTransbyDate` returns a **cookie** (no data);
   `GetNextTransbyDate(cookie)` returns data **plus an updated cookie you MUST
   thread into the next call** — reusing the old cookie loops over the same page

@@ -3,8 +3,10 @@
 An httpx.MockTransport feeds canned SOAP responses (namespaced under
 urn:CSSoapService, trans_list_xml HTML-escaped) so the facade drives the real
 SOAP client and parser end to end. These tests prove the facade manages exactly
-one session across multiple resource calls, closes it on exit even when a
-resource raises, and refuses to work before the session is open.
+one session across multiple resource calls, refuses to work before the session
+is open, and — because the Magaya `access_key` is a constant of the
+credential shared by every process using it — does NOT send `EndSession` on
+`with` exit unless `end_session_on_close=True` was requested.
 """
 
 from __future__ import annotations
@@ -89,7 +91,11 @@ def _method(body: str) -> str | None:
     return None
 
 
-def _facade(handler: Callable[[httpx.Request], httpx.Response]) -> Magaya:
+def _facade(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    end_session_on_close: bool = False,
+) -> Magaya:
     transport = httpx.MockTransport(handler)
     http_client = httpx.Client(transport=transport)
     client = MagayaSoapClient(
@@ -98,7 +104,7 @@ def _facade(handler: Callable[[httpx.Request], httpx.Response]) -> Magaya:
         password="pass",
         http_client=http_client,
     )
-    return Magaya(client=client)
+    return Magaya(client=client, end_session_on_close=end_session_on_close)
 
 
 def test_shipments_list_returns_shipments():
@@ -107,7 +113,6 @@ def test_shipments_list_returns_shipments():
             _start_session_response(999),
             _get_first_response("cookie|abc", more_results=1),
             _get_next_response(_doc(_shipment("a", "SH-1"), _shipment("b", "SH-2")), more_results=0),
-            _end_session_response(),
         ]
     )
 
@@ -144,10 +149,10 @@ def test_two_resource_calls_reuse_a_single_session():
 
     assert [s.number for s in first] == ["SH-1"]
     assert [s.number for s in second] == ["SH-1"]
-    # The session is reused, not reopened per call: exactly one StartSession and
-    # exactly one EndSession across both resource calls.
+    # The session is reused, not reopened per call: exactly one StartSession
+    # across both resource calls, and no EndSession by default.
     assert calls.count("StartSession") == 1
-    assert calls.count("EndSession") == 1
+    assert calls.count("EndSession") == 0
 
 
 def test_using_a_resource_before_open_raises_session_error():
@@ -162,11 +167,47 @@ def test_using_a_resource_before_open_raises_session_error():
         _ = magaya.access_key
 
 
-def test_end_session_is_sent_even_when_a_resource_raises():
+def test_session_is_not_ended_when_a_resource_raises():
     calls: list[str] = []
 
     class _Boom(Exception):
         pass
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = _method(request.content.decode("utf-8"))
+        calls.append(method)
+        text = _start_session_response(999)
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    magaya = _facade(handler)
+    with pytest.raises(_Boom), magaya:
+        raise _Boom()
+
+    # No EndSession by default, even when the `with` block raises...
+    assert calls == ["StartSession"]
+    # ...but the session state is still cleaned up: the facade reports itself
+    # closed rather than holding a stale access key.
+    with pytest.raises(SessionError):
+        _ = magaya.access_key
+
+
+def test_end_session_is_not_sent_by_default_on_normal_exit():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = _method(request.content.decode("utf-8"))
+        calls.append(method)
+        text = _start_session_response(999)
+        return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
+
+    with _facade(handler):
+        pass
+
+    assert calls == ["StartSession"]
+
+
+def test_end_session_is_sent_when_opted_in_on_normal_exit():
+    calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         method = _method(request.content.decode("utf-8"))
@@ -177,8 +218,7 @@ def test_end_session_is_sent_even_when_a_resource_raises():
             text = _end_session_response()
         return httpx.Response(200, text=text, headers={"Content-Type": "text/xml"})
 
-    with pytest.raises(_Boom), _facade(handler):
-        raise _Boom()
+    with _facade(handler, end_session_on_close=True):
+        pass
 
-    # EndSession must still be sent on `with` exit despite the in-block failure.
     assert calls == ["StartSession", "EndSession"]

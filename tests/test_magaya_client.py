@@ -205,20 +205,7 @@ def _sent_cookie(body: str) -> str | None:
     return match.group(1) if match else None
 
 
-def test_read_transactions_by_date_iterates_and_ends_session():
-    requests: list[str] = []
-    sent_cookies: list[str] = []
-
-    responses = iter(
-        [
-            _start_session_response(999),
-            _get_first_response("cookie|abc", more_results=1),
-            _get_next_response("<chunk>1</chunk>", more_results=1, next_cookie="cookie|p2"),
-            _get_next_response("<chunk>2</chunk>", more_results=0, next_cookie="cookie|p3"),
-            _end_session_response(),
-        ]
-    )
-
+def _read_transactions_handler(requests: list[str], sent_cookies: list[str], responses):
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.decode("utf-8")
         # Record which method was invoked by its element local-name.
@@ -235,7 +222,23 @@ def test_read_transactions_by_date_iterates_and_ends_session():
                 break
         return httpx.Response(200, text=next(responses), headers={"Content-Type": "text/xml"})
 
-    client = _client(handler)
+    return handler
+
+
+def test_read_transactions_by_date_iterates_and_does_not_end_session_by_default():
+    requests: list[str] = []
+    sent_cookies: list[str] = []
+
+    responses = iter(
+        [
+            _start_session_response(999),
+            _get_first_response("cookie|abc", more_results=1),
+            _get_next_response("<chunk>1</chunk>", more_results=1, next_cookie="cookie|p2"),
+            _get_next_response("<chunk>2</chunk>", more_results=0, next_cookie="cookie|p3"),
+        ]
+    )
+
+    client = _client(_read_transactions_handler(requests, sent_cookies, responses))
     chunks = list(
         client.read_transactions_by_date(
             trans_type="SH",
@@ -245,17 +248,50 @@ def test_read_transactions_by_date_iterates_and_ends_session():
     )
 
     assert chunks == ["<chunk>1</chunk>", "<chunk>2</chunk>"]
+    # No EndSession by default: the access key is shared across every process
+    # using this credential, so ending it would strand the others mid-batch.
     assert requests == [
         "StartSession",
         "GetFirstTransbyDate",
         "GetNextTransbyDate",
         "GetNextTransbyDate",
-        "EndSession",
     ]
     # Regression: the second GetNext must use the cookie RETURNED by the first
     # GetNext (threaded), not the original GetFirst cookie. Reusing the same
     # cookie would loop over the same page forever.
     assert sent_cookies == ["cookie|abc", "cookie|p2"]
+
+
+def test_read_transactions_by_date_ends_session_when_opted_in():
+    requests: list[str] = []
+    sent_cookies: list[str] = []
+
+    responses = iter(
+        [
+            _start_session_response(999),
+            _get_first_response("cookie|abc", more_results=1),
+            _get_next_response("<chunk>1</chunk>", more_results=0, next_cookie="cookie|p2"),
+            _end_session_response(),
+        ]
+    )
+
+    client = _client(_read_transactions_handler(requests, sent_cookies, responses))
+    chunks = list(
+        client.read_transactions_by_date(
+            trans_type="SH",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            end_session_on_close=True,
+        )
+    )
+
+    assert chunks == ["<chunk>1</chunk>"]
+    assert requests == [
+        "StartSession",
+        "GetFirstTransbyDate",
+        "GetNextTransbyDate",
+        "EndSession",
+    ]
 
 
 def test_get_transaction_sends_documented_params_and_unescapes_response():

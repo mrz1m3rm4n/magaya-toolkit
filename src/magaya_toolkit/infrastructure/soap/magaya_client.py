@@ -1104,12 +1104,18 @@ class MagayaSoapClient:
         record_quantity: int = 5,
         backwards_order: bool = False,
         flags: int = 0,
+        *,
+        end_session_on_close: bool = False,
     ) -> Iterator[str]:
         """Yield each `trans_list_xml` batch for a date range.
 
         Opens a session, runs the query, and iterates `GetNext` until there are
-        no more results. Always closes the session (Magaya best practice: do
-        not leave sessions open and do not run them in parallel).
+        no more results. `EndSession` is opt-in and off by default: Magaya
+        returns the same `access_key` for a given credential every time, so it
+        is a constant of the credential rather than a per-session token, and
+        ending it kills the session shared by every other consumer of that
+        credential. Pass `end_session_on_close=True` to send `EndSession` once
+        iteration finishes.
         """
         access_key = self.start_session()
         try:
@@ -1123,4 +1129,5 @@ class MagayaSoapClient:
                 flags=flags,
             )
         finally:
-            self.end_session(access_key)
+            if end_session_on_close:
+                self.end_session(access_key)

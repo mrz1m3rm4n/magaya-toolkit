@@ -15,7 +15,8 @@ behind a clean, typed SDK so callers work with Python objects, not raw XML.
 ## Use as a library
 
 The primary interface is the `Magaya` facade. It manages a single Magaya
-session for you (one `StartSession` / `EndSession` per `with` block) and exposes
+session for you (one `StartSession` per `with` block; `EndSession` is opt-in
+and off by default — see [Magaya API notes](#magaya-api-notes)) and exposes
 typed resources — you never touch access keys or pagination cookies:
 
 ```python
@@ -578,8 +579,15 @@ Useful facts about the Magaya API, verified against a live cloud instance:
   namespace `urn:CSSoapService`. No WSDL is required — the toolkit builds the
   envelopes by hand. No `SOAPAction` header is needed.
 - **Session.** `StartSession(user, pass)` returns an integer `access_key` used
-  by every subsequent call; always close with `EndSession(access_key)`. Only one
-  session per key/IP is allowed (`too_many_open_sessions` otherwise).
+  by every subsequent call. That key is a **constant of the credential**, not a
+  per-session token — verified against a production capture (16 consecutive
+  `StartSession` calls, same key every time; 180 calls/hour, zero failures). A
+  second `StartSession` revalidates the same key rather than replacing it, and
+  `EndSession(access_key)` from any process kills the one session shared by
+  every process using that credential (e.g. a production ETL), not just the
+  caller's. Because of this, the toolkit does NOT call `EndSession` by default
+  — it is opt-in via `end_session_on_close=True`. Only one session per key/IP
+  is allowed (`too_many_open_sessions` otherwise).
 - **Reading by date.** `GetFirstTransbyDate` returns a **cookie** cursor (not the
   data). `GetNextTransbyDate(cookie)` returns the transaction XML **and an
   updated cookie** — you must thread that updated cookie into the next call, or

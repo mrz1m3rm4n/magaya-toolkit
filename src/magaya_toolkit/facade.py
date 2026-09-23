@@ -35,8 +35,14 @@ class Magaya:
             shipments = magaya.shipments.list("2025-01-01", "2025-01-31")
 
     Multiple resource calls inside a single `with` block reuse the same session
-    (exactly one `StartSession` and one `EndSession` in total). `open()` is
-    idempotent and `close()` is safe to call when no session is open or twice.
+    (exactly one `StartSession`). `EndSession` is opt-in and off by default:
+    Magaya returns the same `access_key` for a given credential every time, so
+    the key is a constant of the credential rather than a per-session token —
+    ending it tears down the one session shared by every other consumer of
+    that credential (e.g. a production ETL), not just this process. Pass
+    `end_session_on_close=True` if this process should own the shared session
+    and is safe to end it. `open()` is idempotent and `close()` is safe to
+    call when no session is open or twice.
 
     Pass a `MagayaSoapClient` via `client=` only to inject a test double; in
     normal use a client is built from `settings`.
@@ -47,11 +53,13 @@ class Magaya:
         settings: MagayaSettings | None = None,
         *,
         client: MagayaSoapClient | None = None,
+        end_session_on_close: bool = False,
     ) -> None:
         if client is None:
             client = MagayaSoapClient(settings or MagayaSettings())
         self._client = client
         self._access_key: int | None = None
+        self._end_session_on_close = end_session_on_close
 
         # Resource namespaces bound to this facade. Add more the same way.
         self.shipments = ShipmentsResource(self)
@@ -72,10 +80,16 @@ class Magaya:
         return self
 
     def close(self) -> None:
-        """End the session (if open) and close the client. Safe to call twice."""
+        """Close the client and, if opted in, end the session. Safe to call twice.
+
+        `EndSession` is only sent when `end_session_on_close=True` was passed
+        to `__init__` — the access key is shared across every process using
+        this credential, so ending it by default would strand them mid-batch.
+        """
         if self._access_key is not None:
             try:
-                self._client.end_session(self._access_key)
+                if self._end_session_on_close:
+                    self._client.end_session(self._access_key)
             finally:
                 self._access_key = None
         self._client.close()
